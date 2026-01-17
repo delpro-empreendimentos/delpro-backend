@@ -1,0 +1,16 @@
+# .coveragerc to control coverage.py
+[run]
+branch = True
+omit =
+    tests/*
+    */__init__.py
+pythonpath = src
+source = src
+
+[report]
+exclude_lines =
+    if __name__ == .__main__.:
+    pass
+precision = 2
+
+fail_under = 60.00
