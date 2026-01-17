@@ -1,0 +1,8 @@
+@BaseUrl = {{$dotenv BASE_URL}}
+
+### Check if is alive
+GET {{BaseUrl}}
+
+
+### Check if is alive
+GET {{BaseUrl}}/chat/home
