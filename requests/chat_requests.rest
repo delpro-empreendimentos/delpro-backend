@@ -5,4 +5,8 @@ GET {{BaseUrl}}
 
 
 ### Check if is alive
-GET {{BaseUrl}}/chat/home
+POST {{BaseUrl}}/chat
+
+{
+    "input": "Ola! Escreva um texto de 10 palavras."
+}
