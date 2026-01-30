@@ -7,8 +7,6 @@ from delpro_backend.utils.llm_builder import get_llm
 
 chat_router = APIRouter(prefix="/chat", tags=["chat"])
 
-
-
 llm = get_llm()
 
 

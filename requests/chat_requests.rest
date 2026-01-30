@@ -8,5 +8,5 @@ GET {{BaseUrl}}
 POST {{BaseUrl}}/chat
 
 {
-    "input": "Ola! Escreva um texto de 10 palavras."
+    "input": "Ola! escreva um breve texto sobre o bolsonaro"
 }

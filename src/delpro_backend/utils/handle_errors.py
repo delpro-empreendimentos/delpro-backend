@@ -6,7 +6,7 @@ from functools import wraps
 from fastapi import HTTPException, status
 from pydantic import ValidationError
 
-from delpro_backend.settings.logger import get_logger
+from delpro_backend.utils.logger import get_logger
 
 logger_extra = {"component.name": "ErrorHandler", "component.version": "v2"}
 logger = get_logger(__name__)
