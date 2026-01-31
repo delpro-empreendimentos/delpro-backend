@@ -26,7 +26,7 @@ class DbService:
     """Database service providing CRUD operations for resources."""
 
     @staticmethod
-    async def save(resource: ResourceDocument):
+    async def save(resource: ResourceDocument) -> ResourceDocument:
         """Persist a ResourceDocument by id (upsert semantics).
 
         Inputs:
