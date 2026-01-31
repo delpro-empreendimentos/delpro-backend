@@ -4,7 +4,6 @@ branch = True
 omit =
     tests/*
     */__init__.py
-pythonpath = src
 source = src
 
 [report]
