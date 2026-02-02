@@ -8,5 +8,7 @@ GET {{BaseUrl}}
 POST {{BaseUrl}}/chat
 
 {
-    "input": "Ola! escreva um breve texto sobre o bolsonaro"
+    "input": "ola, queria saber mais sobre o free",
+    "session_id": "1",
+    "user_name": "Nicolas"
 }
