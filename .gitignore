@@ -74,6 +74,7 @@ instance/
 # Scrapy stuff:
 .scrapy
 CLAUDE.md
+.claude
 
 # Sphinx documentation
 docs/_build/
