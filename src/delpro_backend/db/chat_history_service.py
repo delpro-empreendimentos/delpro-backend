@@ -14,7 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from delpro_backend.assistant.prompt_loader import get_summary_prompt
 from delpro_backend.db.db_service import DbService, _row_to_message
 from delpro_backend.db.models import MessageRow
-from delpro_backend.utils.llm_builder import get_llm
+from delpro_backend.utils.llm_builder import get_summary_llm
 from delpro_backend.utils.settings import settings
 
 logger = logging.getLogger(__name__)
@@ -77,8 +77,8 @@ class PostgresChatMessageHistory(BaseChatMessageHistory):
             if not old_messages:
                 return  # Nothing to summarize
 
-            # Generate summary with LLM
-            llm = get_llm()
+            # Generate summary with LLM (using summary-specific config)
+            llm = get_summary_llm()
             summary_prompt = get_summary_prompt(old_messages)
             response = await llm.ainvoke(summary_prompt)
 

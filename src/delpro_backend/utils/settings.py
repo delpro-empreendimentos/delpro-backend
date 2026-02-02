@@ -16,6 +16,7 @@ class Settings(BaseSettings):
     PROJECT_ID: str
     GEMINI_MODEL: str
     MAX_TOKENS: int
+    MAX_TOKENS_SUMMARY: int
     LLM_TEMPERATURE: int
 
     # Chat History
