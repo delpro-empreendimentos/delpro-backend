@@ -1,5 +1,6 @@
 """Module for loading prompt configuration from YAML files."""
 
+from collections.abc import Sequence
 from pathlib import Path
 
 import yaml
@@ -52,11 +53,11 @@ def build_chat_prompt(filename: str = "prompt.yml") -> ChatPromptTemplate:
     )
 
 
-def get_summary_prompt(messages: list[BaseMessage], filename: str = "prompt.yml") -> str:
+def get_summary_prompt(messages: Sequence[BaseMessage], filename: str = "prompt.yml") -> str:
     """Build a summary prompt from conversation messages.
 
     Args:
-        messages: List of messages to summarize.
+        messages: Sequence of messages to summarize.
         filename: Name of the YAML file containing the summary prompt template.
 
     Returns:
