@@ -4,11 +4,22 @@ import os
 import unittest
 from unittest.mock import AsyncMock, MagicMock, patch
 
-# Ensure DATABASE_URL is available before db_service is imported.
+# Ensure required env vars are available before settings is imported.
 os.environ.setdefault("DATABASE_URL", "postgresql+asyncpg://test:test@localhost:5432/test_db")
+os.environ.setdefault("WPP_PHONE_ID", "test")
+os.environ.setdefault("WPP_TEST_NUMER", "test")
+os.environ.setdefault("WPP_TOKEN", "test")
+os.environ.setdefault("API_KEY", "test")
+os.environ.setdefault("PROJECT_ID", "test")
+os.environ.setdefault("GEMINI_MODEL", "gemini-2.0-flash")
+os.environ.setdefault("MAX_TOKENS", "1024")
+os.environ.setdefault("LLM_TEMPERATURE", "0")
+os.environ.setdefault("MAX_HISTORY_MESSAGES", "20")
 
-from delpro_backend.db.db_service import DbService
-from delpro_backend.db.models import Base, ResourceDocument, ResourceRow
+from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
+
+from delpro_backend.db.db_service import DbService, _row_to_message
+from delpro_backend.db.models import Base, MessageRow, ResourceDocument, ResourceRow
 
 
 class TestResourceDocument(unittest.TestCase):
@@ -113,3 +124,162 @@ class TestDbServiceGet(unittest.IsolatedAsyncioTestCase):
         result = await DbService.get("nonexistent")
 
         self.assertIsNone(result)
+
+
+class TestRowToMessage(unittest.TestCase):
+    """Tests for _row_to_message helper function."""
+
+    def test_converts_human_message(self):
+        """Test converting MessageRow with role='human' to HumanMessage."""
+        row = MagicMock(spec=MessageRow)
+        row.role = "human"
+        row.content = "Hello"
+
+        result = _row_to_message(row)
+
+        self.assertIsInstance(result, HumanMessage)
+        self.assertEqual(result.content, "Hello")
+
+    def test_converts_ai_message(self):
+        """Test converting MessageRow with role='ai' to AIMessage."""
+        row = MagicMock(spec=MessageRow)
+        row.role = "ai"
+        row.content = "Hi there!"
+
+        result = _row_to_message(row)
+
+        self.assertIsInstance(result, AIMessage)
+        self.assertEqual(result.content, "Hi there!")
+
+    def test_converts_system_message(self):
+        """Test converting MessageRow with role='system' to SystemMessage."""
+        row = MagicMock(spec=MessageRow)
+        row.role = "system"
+        row.content = "System message"
+
+        result = _row_to_message(row)
+
+        self.assertIsInstance(result, SystemMessage)
+        self.assertEqual(result.content, "System message")
+
+    def test_unknown_role_defaults_to_human(self):
+        """Test unknown role defaults to HumanMessage."""
+        row = MagicMock(spec=MessageRow)
+        row.role = "unknown"
+        row.content = "Mystery content"
+
+        result = _row_to_message(row)
+
+        self.assertIsInstance(result, HumanMessage)
+        self.assertEqual(result.content, "Mystery content")
+
+
+class TestDbServiceFetchAndDeleteOldMessages(unittest.IsolatedAsyncioTestCase):
+    """Tests for DbService.fetch_and_delete_old_messages."""
+
+    @patch("delpro_backend.db.db_service.AsyncSessionFactory")
+    async def test_returns_empty_when_under_limit(self, mock_factory):
+        """Test returns empty list when message count is under limit."""
+        mock_session = AsyncMock()
+
+        # Mock COUNT query (10 messages)
+        mock_count_result = MagicMock()
+        mock_count_result.scalar_one.return_value = 10
+        mock_session.execute.return_value = mock_count_result
+
+        mock_factory.return_value.__aenter__.return_value = mock_session
+
+        result = await DbService.fetch_and_delete_old_messages("session-1", 20)
+
+        self.assertEqual(result, [])
+        mock_session.commit.assert_not_awaited()
+
+    @patch("delpro_backend.db.db_service.AsyncSessionFactory")
+    async def test_fetches_and_deletes_old_messages(self, mock_factory):
+        """Test fetches and deletes messages when over limit."""
+        mock_session = AsyncMock()
+
+        # Mock COUNT query (25 messages)
+        mock_count_result = MagicMock()
+        mock_count_result.scalar_one.return_value = 25
+
+        # Mock SELECT old messages (5 oldest)
+        old_rows = [MagicMock(id=i, role="human", content=f"msg {i}") for i in range(1, 6)]
+        mock_old_result = MagicMock()
+        mock_old_result.scalars.return_value.all.return_value = old_rows
+
+        mock_session.execute.side_effect = [
+            mock_count_result,  # COUNT
+            mock_old_result,  # SELECT old
+            AsyncMock(),  # DELETE
+        ]
+
+        mock_factory.return_value.__aenter__.return_value = mock_session
+
+        result = await DbService.fetch_and_delete_old_messages("session-1", 20)
+
+        self.assertEqual(len(result), 5)
+        self.assertIsInstance(result[0], HumanMessage)
+        mock_session.commit.assert_awaited_once()
+
+    @patch("delpro_backend.db.db_service.AsyncSessionFactory")
+    async def test_returns_empty_when_no_rows_found(self, mock_factory):
+        """Test returns empty list when old messages query returns no rows."""
+        mock_session = AsyncMock()
+
+        # Mock COUNT query (25 messages)
+        mock_count_result = MagicMock()
+        mock_count_result.scalar_one.return_value = 25
+
+        # Mock SELECT old messages (empty result)
+        mock_old_result = MagicMock()
+        mock_old_result.scalars.return_value.all.return_value = []
+
+        mock_session.execute.side_effect = [
+            mock_count_result,  # COUNT
+            mock_old_result,  # SELECT old
+        ]
+
+        mock_factory.return_value.__aenter__.return_value = mock_session
+
+        result = await DbService.fetch_and_delete_old_messages("session-1", 20)
+
+        self.assertEqual(result, [])
+        mock_session.commit.assert_not_awaited()
+
+
+class TestDbServiceInsertSummaryMessage(unittest.IsolatedAsyncioTestCase):
+    """Tests for DbService.insert_summary_message."""
+
+    @patch("delpro_backend.db.db_service.AsyncSessionFactory")
+    async def test_inserts_summary_message(self, mock_factory):
+        """Test inserts SystemMessage with summary."""
+        mock_session = AsyncMock()
+        mock_session.add = MagicMock()
+        mock_factory.return_value.__aenter__.return_value = mock_session
+
+        await DbService.insert_summary_message("session-1", "Summary text")
+
+        mock_session.add.assert_called_once()
+        added_row = mock_session.add.call_args[0][0]
+        self.assertEqual(added_row.session_id, "session-1")
+        self.assertEqual(added_row.role, "system")
+        self.assertEqual(added_row.content, "Summary text")
+        mock_session.commit.assert_awaited_once()
+
+    @patch("delpro_backend.db.db_service.AsyncSessionFactory")
+    async def test_truncates_long_summary(self, mock_factory):
+        """Test truncates summary text when too long."""
+        mock_session = AsyncMock()
+        mock_session.add = MagicMock()
+        mock_factory.return_value.__aenter__.return_value = mock_session
+
+        long_summary = "x" * 5000  # Longer than MAX_SUMMARY_LENGTH (4000)
+
+        await DbService.insert_summary_message("session-1", long_summary)
+
+        mock_session.add.assert_called_once()
+        added_row = mock_session.add.call_args[0][0]
+        self.assertEqual(len(added_row.content), 4003)  # 4000 + "..."
+        self.assertTrue(added_row.content.endswith("..."))
+        mock_session.commit.assert_awaited_once()
