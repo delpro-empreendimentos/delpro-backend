@@ -15,7 +15,9 @@ def get_logger(logger_name: str) -> Logger:
     logger.setLevel(os.getenv("LOG_LEVEL", "INFO"))
 
     # Create log formatter
-    formatter = logging.Formatter("%(asctime)s %(levelname)s [%(name)s] [%(filename)s:%(lineno)d] - %(message)s")
+    formatter = logging.Formatter(
+        "%(asctime)s %(levelname)s [%(name)s] [%(filename)s:%(lineno)d] - %(message)s"
+    )
 
     # Add stream handler to output to console
     handler = logging.StreamHandler()

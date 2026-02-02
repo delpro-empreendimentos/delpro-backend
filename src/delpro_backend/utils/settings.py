@@ -11,17 +11,15 @@ class Settings(BaseSettings):
         env_file=find_dotenv(), env_file_encoding="utf-8", extra="ignore"
     )
 
-    # Whatsapp
-    WPP_PHONE_ID: str
-    WPP_TEST_NUMER: str
-    WPP_TOKEN: str
-
     # Gemini LangChain
     API_KEY: str
     PROJECT_ID: str
     GEMINI_MODEL: str
     MAX_TOKENS: int
     LLM_TEMPERATURE: int
+
+    # Chat History
+    MAX_HISTORY_MESSAGES: int = 5
 
     DATABASE_URL: str
 
