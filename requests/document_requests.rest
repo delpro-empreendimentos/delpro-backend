@@ -1,0 +1,36 @@
+@BaseUrl = {{$dotenv BASE_URL}}/documents
+
+### Test endpoint
+GET {{BaseUrl}}/test
+
+### Upload files
+POST {{BaseUrl}}
+Content-Type: multipart/form-data; boundary=boundary
+
+--boundary
+Content-Disposition: form-data; name="files"; filename="olympic_building_information.txt"
+Content-Type: text/plain
+
+< test_files/olympic_building_information.txt
+--boundary
+# Content-Disposition: form-data; name="files"; filename="upload_file_request_1.txt"
+# Content-Type: application/pdf
+
+# < test_files/upload_file_request_1.txt
+# --boundary
+# Content-Disposition: form-data; name="files"; filename="upload_file_request_2.txt"
+# Content-Type: application/pdf
+
+# < test_files/upload_file_request_2.txt
+# --boundary--
+
+### Get List of Documents
+GET {{BaseUrl}}
+
+@documentid = 8e52dcdb-8042-479f-836f-6995ec1d1ec2
+
+### Get Information for a document
+GET {{BaseUrl}}/{{documentid}}
+
+### Delete a document
+DELETE {{BaseUrl}}/{{documentid}}
