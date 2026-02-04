@@ -4,7 +4,7 @@
 GET {{BaseUrl}}
 
 
-@Input = me fale todas as informacoes do novo empreendimento olympic que voce possui
+@Input = me fale todas as informacoes do novo empreendimento brisa que voce possui
 
 ### Send a message
 POST {{BaseUrl}}/chat

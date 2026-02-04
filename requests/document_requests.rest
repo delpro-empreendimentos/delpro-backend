@@ -8,10 +8,10 @@ POST {{BaseUrl}}
 Content-Type: multipart/form-data; boundary=boundary
 
 --boundary
-Content-Disposition: form-data; name="files"; filename="olympic_building_information.txt"
+Content-Disposition: form-data; name="files"; filename="brisa.txt"
 Content-Type: text/plain
 
-< test_files/olympic_building_information.txt
+< test_files/brisa.txt
 --boundary
 # Content-Disposition: form-data; name="files"; filename="upload_file_request_1.txt"
 # Content-Type: application/pdf
