@@ -198,7 +198,7 @@ class TestSummarization(unittest.IsolatedAsyncioTestCase):
 
     @patch("delpro_backend.db.chat_history_service.DbService.insert_summary_message")
     @patch("delpro_backend.db.chat_history_service.DbService.fetch_and_delete_old_messages")
-    @patch("delpro_backend.db.chat_history_service.get_llm")
+    @patch("delpro_backend.db.chat_history_service.get_summary_llm")
     async def test_summarization_with_old_messages(
         self, mock_get_llm, mock_fetch_delete, mock_insert_summary
     ):
@@ -251,7 +251,7 @@ class TestSummarization(unittest.IsolatedAsyncioTestCase):
 
     @patch("delpro_backend.db.chat_history_service.DbService.insert_summary_message")
     @patch("delpro_backend.db.chat_history_service.DbService.fetch_and_delete_old_messages")
-    @patch("delpro_backend.db.chat_history_service.get_llm")
+    @patch("delpro_backend.db.chat_history_service.get_summary_llm")
     async def test_summarization_handles_llm_failure(
         self, mock_get_llm, mock_fetch_delete, mock_insert_summary
     ):
@@ -279,7 +279,7 @@ class TestSummarization(unittest.IsolatedAsyncioTestCase):
 
     @patch("delpro_backend.db.chat_history_service.DbService.insert_summary_message")
     @patch("delpro_backend.db.chat_history_service.DbService.fetch_and_delete_old_messages")
-    @patch("delpro_backend.db.chat_history_service.get_llm")
+    @patch("delpro_backend.db.chat_history_service.get_summary_llm")
     async def test_summarization_with_list_non_dict_content(
         self, mock_get_llm, mock_fetch_delete, mock_insert_summary
     ):
@@ -307,7 +307,7 @@ class TestSummarization(unittest.IsolatedAsyncioTestCase):
 
     @patch("delpro_backend.db.chat_history_service.DbService.insert_summary_message")
     @patch("delpro_backend.db.chat_history_service.DbService.fetch_and_delete_old_messages")
-    @patch("delpro_backend.db.chat_history_service.get_llm")
+    @patch("delpro_backend.db.chat_history_service.get_summary_llm")
     async def test_summarization_with_non_string_non_list_content(
         self, mock_get_llm, mock_fetch_delete, mock_insert_summary
     ):
@@ -335,7 +335,7 @@ class TestSummarization(unittest.IsolatedAsyncioTestCase):
 
     @patch("delpro_backend.db.chat_history_service.DbService.insert_summary_message")
     @patch("delpro_backend.db.chat_history_service.DbService.fetch_and_delete_old_messages")
-    @patch("delpro_backend.db.chat_history_service.get_llm")
+    @patch("delpro_backend.db.chat_history_service.get_summary_llm")
     async def test_summarization_with_no_content_attribute(
         self, mock_get_llm, mock_fetch_delete, mock_insert_summary
     ):
@@ -362,7 +362,7 @@ class TestSummarization(unittest.IsolatedAsyncioTestCase):
 
     @patch("delpro_backend.db.chat_history_service.DbService.insert_summary_message")
     @patch("delpro_backend.db.chat_history_service.DbService.fetch_and_delete_old_messages")
-    @patch("delpro_backend.db.chat_history_service.get_llm")
+    @patch("delpro_backend.db.chat_history_service.get_summary_llm")
     async def test_summarization_with_dict_without_text_key(
         self, mock_get_llm, mock_fetch_delete, mock_insert_summary
     ):

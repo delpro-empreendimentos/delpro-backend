@@ -18,6 +18,7 @@ os.environ.setdefault("MAX_HISTORY_MESSAGES", "20")
 from fastapi import HTTPException, status
 from pydantic import BaseModel, ValidationError
 
+from delpro_backend.db.exceptions import DocumentProcessingError, ResourceNotFoundError
 from delpro_backend.utils.handle_errors import handle_errors
 
 
@@ -101,3 +102,31 @@ class TestHandleErrors(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(cm.exception.status_code, status.HTTP_500_INTERNAL_SERVER_ERROR)
         self.assertIn("Something went wrong", cm.exception.detail)
+
+    async def test_handles_resource_not_found_error(self):
+        """Test that ResourceNotFoundError is converted to 404 HTTPException."""
+
+        @handle_errors
+        async def func_with_resource_not_found():
+            raise ResourceNotFoundError("Document", "doc-123")
+
+        with self.assertRaises(HTTPException) as cm:
+            await func_with_resource_not_found()
+
+        self.assertEqual(cm.exception.status_code, status.HTTP_404_NOT_FOUND)
+        self.assertIn("Document", cm.exception.detail)
+        self.assertIn("doc-123", cm.exception.detail)
+
+    async def test_handles_document_processing_error(self):
+        """Test that DocumentProcessingError is converted to 500 HTTPException."""
+
+        @handle_errors
+        async def func_with_document_processing_error():
+            raise DocumentProcessingError("doc-456", "PDF extraction failed")
+
+        with self.assertRaises(HTTPException) as cm:
+            await func_with_document_processing_error()
+
+        self.assertEqual(cm.exception.status_code, status.HTTP_500_INTERNAL_SERVER_ERROR)
+        self.assertIn("doc-456", cm.exception.detail)
+        self.assertIn("PDF extraction failed", cm.exception.detail)
