@@ -4,20 +4,13 @@ import os
 import unittest
 from unittest.mock import AsyncMock, patch
 
-os.environ.setdefault("DATABASE_URL", "postgresql+asyncpg://test:test@localhost:5432/test_db")
-os.environ.setdefault("WPP_PHONE_ID", "test")
-os.environ.setdefault("WPP_TEST_NUMER", "test")
-os.environ.setdefault("WPP_TOKEN", "test")
-os.environ.setdefault("API_KEY", "test")
-os.environ.setdefault("PROJECT_ID", "test")
-os.environ.setdefault("GEMINI_MODEL", "gemini-2.0-flash")
-os.environ.setdefault("MAX_TOKENS", "1024")
-os.environ.setdefault("LLM_TEMPERATURE", "0")
-os.environ.setdefault("MAX_HISTORY_MESSAGES", "20")
-
 from fastapi.testclient import TestClient
 
 from delpro_backend.main import app
+from tests.keys_test import DEFAULT_KEYS
+
+for key, value in DEFAULT_KEYS.items():
+    os.environ.setdefault(key, value)
 
 
 class TestSendMessage(unittest.TestCase):

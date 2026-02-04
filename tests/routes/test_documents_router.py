@@ -4,18 +4,6 @@ import os
 import unittest
 from unittest.mock import AsyncMock, MagicMock, patch
 
-os.environ.setdefault("DATABASE_URL", "postgresql+asyncpg://test:test@localhost:5432/test_db")
-os.environ.setdefault("WPP_PHONE_ID", "test")
-os.environ.setdefault("WPP_TEST_NUMER", "test")
-os.environ.setdefault("WPP_TOKEN", "test")
-os.environ.setdefault("API_KEY", "test")
-os.environ.setdefault("PROJECT_ID", "test")
-os.environ.setdefault("GEMINI_MODEL", "gemini-2.0-flash")
-os.environ.setdefault("MAX_TOKENS", "1024")
-os.environ.setdefault("LLM_TEMPERATURE", "0")
-os.environ.setdefault("MAX_HISTORY_MESSAGES", "20")
-os.environ.setdefault("MAX_TOKENS_SUMMARY", "500")
-
 from fastapi import HTTPException, UploadFile
 
 from delpro_backend.db.exceptions import ResourceNotFoundError
@@ -27,6 +15,11 @@ from delpro_backend.routes.v1.documents_router import (
     test_endpoint,
     upload_documents,
 )
+from tests.keys_test import DEFAULT_KEYS
+
+for key, value in DEFAULT_KEYS.items():
+    os.environ.setdefault(key, value)
+os.environ.setdefault("MAX_TOKENS_SUMMARY", "500")
 
 
 class TestDocumentsRouterTestEndpoint(unittest.IsolatedAsyncioTestCase):
@@ -80,7 +73,7 @@ class TestDocumentsRouterUpload(unittest.IsolatedAsyncioTestCase):
         mock_files = [MagicMock(spec=UploadFile) for _ in range(6)]
 
         with self.assertRaises(HTTPException) as cm:
-            await upload_documents(files=mock_files)
+            await upload_documents(files=mock_files)  # type:ignore
 
         self.assertEqual(cm.exception.status_code, 400)
         self.assertIn("Too many files", cm.exception.detail)
@@ -161,9 +154,7 @@ class TestDocumentsRouterGet(unittest.IsolatedAsyncioTestCase):
         mock_chunk = MagicMock(spec=ChunkRow)
         mock_chunk.content = "x" * 500  # Content longer than 400 chars
 
-        mock_doc_service.get_document_with_chunks = AsyncMock(
-            return_value=(mock_doc, [mock_chunk])
-        )
+        mock_doc_service.get_document_with_chunks = AsyncMock(return_value=(mock_doc, [mock_chunk]))
 
         result = await get_document("doc-123")
 

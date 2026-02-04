@@ -4,21 +4,14 @@ import os
 import unittest
 from unittest.mock import AsyncMock, MagicMock, patch
 
-os.environ.setdefault("DATABASE_URL", "postgresql+asyncpg://test:test@localhost:5432/test_db")
-os.environ.setdefault("WPP_PHONE_ID", "test")
-os.environ.setdefault("WPP_TEST_NUMER", "test")
-os.environ.setdefault("WPP_TOKEN", "test")
-os.environ.setdefault("API_KEY", "test")
-os.environ.setdefault("PROJECT_ID", "test")
-os.environ.setdefault("GEMINI_MODEL", "gemini-2.0-flash")
-os.environ.setdefault("MAX_TOKENS", "1024")
-os.environ.setdefault("LLM_TEMPERATURE", "0")
-os.environ.setdefault("MAX_HISTORY_MESSAGES", "20")
-os.environ.setdefault("MAX_TOKENS_SUMMARY", "500")
-
 from delpro_backend.db.document_service import DocumentService
 from delpro_backend.db.exceptions import ResourceNotFoundError
 from delpro_backend.db.models import ChunkRow, DocumentRow
+from tests.keys_test import DEFAULT_KEYS
+
+for key, value in DEFAULT_KEYS.items():
+    os.environ.setdefault(key, value)
+os.environ.setdefault("MAX_TOKENS_SUMMARY", "500")
 
 
 class TestDocumentServiceCreateDocument(unittest.IsolatedAsyncioTestCase):
@@ -48,7 +41,7 @@ class TestDocumentServiceCreateDocument(unittest.IsolatedAsyncioTestCase):
         mock_session.refresh = mock_refresh
         mock_factory.return_value.__aenter__.return_value = mock_session
 
-        result = await DocumentService.create_document(
+        await DocumentService.create_document(
             filename="test.txt",
             content_type="text/plain",
             file_bytes=b"x" * 100,
@@ -78,6 +71,7 @@ class TestDocumentServiceCreateDocument(unittest.IsolatedAsyncioTestCase):
             file_bytes=b"hello world",  # 11 bytes
         )
 
+        assert captured_doc is not None
         self.assertEqual(captured_doc.file_size_bytes, 11)
         self.assertEqual(captured_doc.status, "processing")
 

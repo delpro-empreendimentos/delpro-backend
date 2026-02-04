@@ -4,21 +4,15 @@ import os
 import unittest
 from unittest.mock import AsyncMock, MagicMock, patch
 
-os.environ.setdefault("DATABASE_URL", "postgresql+asyncpg://test:test@localhost:5432/test_db")
-os.environ.setdefault("WPP_PHONE_ID", "test")
-os.environ.setdefault("WPP_TEST_NUMER", "test")
-os.environ.setdefault("WPP_TOKEN", "test")
-os.environ.setdefault("API_KEY", "test")
-os.environ.setdefault("PROJECT_ID", "test")
-os.environ.setdefault("GEMINI_MODEL", "gemini-2.0-flash")
-os.environ.setdefault("MAX_TOKENS", "1024")
-os.environ.setdefault("LLM_TEMPERATURE", "0")
-os.environ.setdefault("MAX_HISTORY_MESSAGES", "20")
+from tests.keys_test import DEFAULT_KEYS
 
-from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
+for key, value in DEFAULT_KEYS.items():
+    os.environ.setdefault(key, value)
 
-from delpro_backend.assistant.assistant_service import AssistantService
-from delpro_backend.db.chat_history_service import PostgresChatMessageHistory
+from langchain_core.messages import AIMessage, HumanMessage, SystemMessage  # noqa: E402
+
+from delpro_backend.assistant.assistant_service import AssistantService  # noqa: E402
+from delpro_backend.db.chat_history_service import PostgresChatMessageHistory  # noqa: E402
 
 
 class TestAssistantServiceGetSessionHistory(unittest.TestCase):
@@ -408,9 +402,7 @@ class TestAssistantServiceChat(unittest.IsolatedAsyncioTestCase):
             # Verify that rag_context was passed to ainvoke
             call_args = mock_rwmh_instance.ainvoke.call_args
             self.assertIn("rag_context", call_args[0][0])
-            self.assertEqual(
-                call_args[0][0]["rag_context"], "Document content about apartments"
-            )
+            self.assertEqual(call_args[0][0]["rag_context"], "Document content about apartments")
 
     @patch("delpro_backend.assistant.assistant_service.RAGService")
     @patch("delpro_backend.assistant.assistant_service.PostgresChatMessageHistory")
@@ -447,9 +439,7 @@ class TestAssistantServiceChat(unittest.IsolatedAsyncioTestCase):
             await AssistantService.chat("test", "User query here", "Alice")
 
             # Verify RAGService was called with correct parameters
-            mock_rag_service.retrieve_context.assert_called_once_with(
-                "User query here", top_k=1
-            )
+            mock_rag_service.retrieve_context.assert_called_once_with("User query here", top_k=1)
 
 
 class TestAssistantServiceGetChain(unittest.TestCase):

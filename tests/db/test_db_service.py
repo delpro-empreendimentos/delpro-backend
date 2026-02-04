@@ -4,22 +4,14 @@ import os
 import unittest
 from unittest.mock import AsyncMock, MagicMock, patch
 
-# Ensure required env vars are available before settings is imported.
-os.environ.setdefault("DATABASE_URL", "postgresql+asyncpg://test:test@localhost:5432/test_db")
-os.environ.setdefault("WPP_PHONE_ID", "test")
-os.environ.setdefault("WPP_TEST_NUMER", "test")
-os.environ.setdefault("WPP_TOKEN", "test")
-os.environ.setdefault("API_KEY", "test")
-os.environ.setdefault("PROJECT_ID", "test")
-os.environ.setdefault("GEMINI_MODEL", "gemini-2.0-flash")
-os.environ.setdefault("MAX_TOKENS", "1024")
-os.environ.setdefault("LLM_TEMPERATURE", "0")
-os.environ.setdefault("MAX_HISTORY_MESSAGES", "20")
-
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 
 from delpro_backend.db.db_service import DbService, _row_to_message
 from delpro_backend.db.models import Base, MessageRow, ResourceDocument, ResourceRow
+from tests.keys_test import DEFAULT_KEYS
+
+for key, value in DEFAULT_KEYS.items():
+    os.environ.setdefault(key, value)
 
 
 class TestResourceDocument(unittest.TestCase):

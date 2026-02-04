@@ -4,19 +4,13 @@ import os
 import unittest
 from unittest.mock import AsyncMock, MagicMock, patch
 
-os.environ.setdefault("DATABASE_URL", "postgresql+asyncpg://test:test@localhost:5432/test_db")
-os.environ.setdefault("WPP_PHONE_ID", "test")
-os.environ.setdefault("WPP_TEST_NUMER", "test")
-os.environ.setdefault("WPP_TOKEN", "test")
-os.environ.setdefault("API_KEY", "test")
-os.environ.setdefault("PROJECT_ID", "test")
-os.environ.setdefault("GEMINI_MODEL", "gemini-2.0-flash")
-os.environ.setdefault("MAX_TOKENS", "1024")
-os.environ.setdefault("LLM_TEMPERATURE", "0")
-os.environ.setdefault("MAX_HISTORY_MESSAGES", "20")
-os.environ.setdefault("MAX_TOKENS_SUMMARY", "500")
-
+from delpro_backend.db.exceptions import DocumentProcessingError
 from delpro_backend.services.rag_service import RAGService
+from tests.keys_test import DEFAULT_KEYS
+
+for key, value in DEFAULT_KEYS.items():
+    os.environ.setdefault(key, value)
+os.environ.setdefault("MAX_TOKENS_SUMMARY", "500")
 
 
 class TestRAGServiceRetrieveContext(unittest.IsolatedAsyncioTestCase):
@@ -72,9 +66,7 @@ class TestRAGServiceRetrieveContext(unittest.IsolatedAsyncioTestCase):
 
         await RAGService.retrieve_context("test query", top_k=2)
 
-        mock_vector_service.semantic_search.assert_called_once_with(
-            query_embedding, top_k=2
-        )
+        mock_vector_service.semantic_search.assert_called_once_with(query_embedding, top_k=2)
 
     @patch("delpro_backend.services.rag_service.VectorService")
     @patch("delpro_backend.services.rag_service.get_embeddings")
@@ -254,7 +246,9 @@ class TestRAGServiceProcessDocument(unittest.IsolatedAsyncioTestCase):
     @patch("delpro_backend.services.rag_service.DocumentService")
     @patch("delpro_backend.services.rag_service.VectorService")
     @patch("delpro_backend.services.rag_service.PdfReader")
-    async def test_process_document_pdf(self, mock_pdf_reader, mock_vector_service, mock_doc_service):
+    async def test_process_document_pdf(
+        self, mock_pdf_reader, mock_vector_service, mock_doc_service
+    ):
         """Test processing a PDF document."""
         # Mock PDF reader
         mock_page = MagicMock()
@@ -275,10 +269,10 @@ class TestRAGServiceProcessDocument(unittest.IsolatedAsyncioTestCase):
     @patch("delpro_backend.services.rag_service.DocumentService")
     @patch("delpro_backend.services.rag_service.VectorService")
     async def test_process_document_unsupported_type(self, mock_vector_service, mock_doc_service):
-        """Test that unsupported content types raise ValueError."""
+        """Test that unsupported content types raise DocumentProcessingError."""
         mock_doc_service.update_document_status = AsyncMock()
 
-        with self.assertRaises(Exception):  # DocumentProcessingError wraps ValueError
+        with self.assertRaises(DocumentProcessingError):
             await RAGService.process_document("doc-123", b"content", "application/json")
 
         mock_doc_service.update_document_status.assert_called_with("doc-123", "failed")
@@ -294,7 +288,7 @@ class TestRAGServiceProcessDocument(unittest.IsolatedAsyncioTestCase):
         )
         mock_doc_service.update_document_status = AsyncMock()
 
-        with self.assertRaises(Exception):
+        with self.assertRaises(DocumentProcessingError):
             await RAGService.process_document("doc-123", b"content", "text/plain")
 
         mock_doc_service.update_document_status.assert_called_with("doc-123", "failed")
