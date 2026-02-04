@@ -1,0 +1,14 @@
+{
+  "Servers": {
+    "1": {
+      "Name": "Delpro PostgreSQL",
+      "Group": "Servers",
+      "Host": "postgres",
+      "Port": 5432,
+      "MaintenanceDB": "delpro_db",
+      "Username": "delpro",
+      "SSLMode": "prefer",
+      "PassFile": "/pgpass"
+    }
+  }
+}

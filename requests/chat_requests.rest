@@ -4,5 +4,13 @@
 GET {{BaseUrl}}
 
 
-### Check if is alive
-GET {{BaseUrl}}/chat/home
+@Input = me fale todas as informacoes do novo empreendimento brisa que voce possui
+
+### Send a message
+POST {{BaseUrl}}/chat
+
+{
+    "input": "{{Input}}",
+    "session_id": "3",
+    "user_name": "Nicolas"
+}

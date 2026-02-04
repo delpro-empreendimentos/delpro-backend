@@ -1,0 +1,36 @@
+@BaseUrl = {{$dotenv BASE_URL}}/documents
+
+### Test endpoint
+GET {{BaseUrl}}/test
+
+### Upload files
+POST {{BaseUrl}}
+Content-Type: multipart/form-data; boundary=boundary
+
+--boundary
+Content-Disposition: form-data; name="files"; filename="brisa.txt"
+Content-Type: text/plain
+
+< test_files/brisa.txt
+--boundary
+# Content-Disposition: form-data; name="files"; filename="upload_file_request_1.txt"
+# Content-Type: application/pdf
+
+# < test_files/upload_file_request_1.txt
+# --boundary
+# Content-Disposition: form-data; name="files"; filename="upload_file_request_2.txt"
+# Content-Type: application/pdf
+
+# < test_files/upload_file_request_2.txt
+# --boundary--
+
+### Get List of Documents
+GET {{BaseUrl}}
+
+@documentid = 71281334-5074-40f7-8b57-af0c25f204f3
+
+### Get Information for a document
+GET {{BaseUrl}}/{{documentid}}
+
+### Delete a document
+DELETE {{BaseUrl}}/{{documentid}}
