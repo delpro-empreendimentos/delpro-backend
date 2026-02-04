@@ -27,7 +27,7 @@ Content-Type: text/plain
 ### Get List of Documents
 GET {{BaseUrl}}
 
-@documentid = 8e52dcdb-8042-479f-836f-6995ec1d1ec2
+@documentid = 71281334-5074-40f7-8b57-af0c25f204f3
 
 ### Get Information for a document
 GET {{BaseUrl}}/{{documentid}}

@@ -4,11 +4,13 @@
 GET {{BaseUrl}}
 
 
-### Check if is alive
+@Input = me fale todas as informacoes do novo empreendimento olympic que voce possui
+
+### Send a message
 POST {{BaseUrl}}/chat
 
 {
-    "input": "ola, queria saber mais sobre o free",
-    "session_id": "1",
+    "input": "{{Input}}",
+    "session_id": "3",
     "user_name": "Nicolas"
 }

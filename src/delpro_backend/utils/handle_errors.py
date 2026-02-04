@@ -6,6 +6,7 @@ from functools import wraps
 from fastapi import HTTPException, status
 from pydantic import ValidationError
 
+from delpro_backend.db.exceptions import DocumentProcessingError, ResourceNotFoundError
 from delpro_backend.utils.logger import get_logger
 
 logger_extra = {"component.name": "ErrorHandler", "component.version": "v2"}
@@ -25,6 +26,14 @@ def handle_errors(func):
             else:
                 return res
 
+        except ResourceNotFoundError as e:
+            logger.warning("Resource not found: %s", str(e), extra=logger_extra)
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e)) from e
+        except DocumentProcessingError as e:
+            logger.exception("Document processing error: %s", str(e), extra=logger_extra)
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e)
+            ) from e
         except ValidationError as e:
             logger.exception("Validation error: %s", e, extra=logger_extra)
             raise HTTPException(
