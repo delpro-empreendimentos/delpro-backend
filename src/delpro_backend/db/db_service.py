@@ -1,7 +1,5 @@
 """Database Service class."""
 
-import logging
-
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage
 from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import (
@@ -11,14 +9,20 @@ from sqlalchemy.ext.asyncio import (
     create_async_engine,
 )
 
-from delpro_backend.db.models import MessageRow, ResourceDocument, ResourceRow
+from delpro_backend.models.v1.database_models import MessageRow, ResourceDocument, ResourceRow
+from delpro_backend.utils.logger import get_logger
 from delpro_backend.utils.settings import settings
 
-logger = logging.getLogger(__name__)
+logger_extra = {"component.name": "DbService", "component.version": "v1"}
+logger = get_logger(__name__)
 
 engine: AsyncEngine = create_async_engine(
     settings.DATABASE_URL,
     echo=False,
+    pool_size=10,
+    max_overflow=20,
+    pool_pre_ping=True,
+    pool_recycle=3600,
 )
 
 AsyncSessionFactory = async_sessionmaker(
@@ -26,24 +30,6 @@ AsyncSessionFactory = async_sessionmaker(
     class_=AsyncSession,
     expire_on_commit=False,
 )
-
-
-def _row_to_message(row: MessageRow) -> BaseMessage:
-    """Convert a MessageRow to the corresponding LangChain message type.
-
-    Args:
-        row: The database row to convert.
-
-    Returns:
-        A LangChain message object.
-    """
-    if row.role == "human":
-        return HumanMessage(content=row.content)
-    if row.role == "ai":
-        return AIMessage(content=row.content)
-    if row.role == "system":
-        return SystemMessage(content=row.content)
-    return HumanMessage(content=row.content)
 
 
 class DbService:
@@ -100,6 +86,10 @@ class DbService:
     ) -> list[BaseMessage]:
         """Fetch and delete old messages that exceed the limit.
 
+        Optimized to use 2 queries instead of 3:
+        1. Subquery to get IDs of oldest messages to delete
+        2. DELETE with RETURNING to delete and fetch in one operation
+
         Args:
             session_id: The conversation/session identifier.
             max_messages: Maximum number of messages to keep.
@@ -108,43 +98,67 @@ class DbService:
             List of old messages that were deleted (empty if none).
         """
         async with AsyncSessionFactory() as session:
-            # Count total messages
-            count_stmt = select(func.count()).where(MessageRow.session_id == session_id)
-            count_result = await session.execute(count_stmt)
-            total_count = count_result.scalar_one()
-
-            # If no need to delete, return empty
-            if total_count <= max_messages:
-                return []
-
-            # Calculate how many messages to delete
-            messages_to_delete = total_count - max_messages
-
-            # Fetch old messages
-            old_msgs_stmt = (
-                select(MessageRow)
+            # Subquery: get IDs of oldest messages that exceed the limit
+            # This calculates (total - max_messages) in a single query
+            ids_subquery = (
+                select(MessageRow.id)
                 .where(MessageRow.session_id == session_id)
                 .order_by(MessageRow.created_at.asc())
-                .limit(messages_to_delete)
+                .limit(
+                    select(func.greatest(0, func.count() - max_messages))
+                    .where(MessageRow.session_id == session_id)
+                    .correlate_except(MessageRow)
+                    .scalar_subquery()
+                )
             )
-            old_result = await session.execute(old_msgs_stmt)
-            old_rows = old_result.scalars().all()
 
-            if not old_rows:
-                logger.warning("No old messages found for session %s", session_id)
-                return []
-
-            # Convert to BaseMessage before deleting
-            old_messages = [_row_to_message(row) for row in old_rows]
-
-            # Delete old messages
-            delete_stmt = delete(MessageRow).where(MessageRow.id.in_([row.id for row in old_rows]))
-            await session.execute(delete_stmt)
+            # DELETE with RETURNING: delete and return data in one query
+            delete_stmt = (
+                delete(MessageRow)
+                .where(MessageRow.id.in_(ids_subquery))
+                .returning(MessageRow.role, MessageRow.content)
+            )
+            result = await session.execute(delete_stmt)
+            deleted_rows = result.fetchall()
             await session.commit()
 
-            logger.info("Deleted %d old messages for session %s", len(old_rows), session_id)
+            if not deleted_rows:
+                return []
+
+            # Convert to BaseMessage
+            old_messages: list[BaseMessage] = []
+            for role, content in deleted_rows:
+                if role == "human":
+                    old_messages.append(HumanMessage(content=content))
+                elif role == "ai":
+                    old_messages.append(AIMessage(content=content))
+                elif role == "system":
+                    old_messages.append(SystemMessage(content=content))
+                else:
+                    old_messages.append(HumanMessage(content=content))
+
+            logger.info("Deleted %d old messages for session %s", len(old_messages), session_id)
 
         return old_messages
+
+    @staticmethod
+    async def get_latest_summary(session_id: str) -> str | None:
+        """Fetch the most recent summary (SystemMessage) content for a session.
+
+        Args:
+            session_id: The conversation/session identifier.
+
+        Returns:
+            The summary text, or None if no summary exists.
+        """
+        async with AsyncSessionFactory() as session:
+            stmt = (
+                select(MessageRow.content)
+                .where(MessageRow.session_id == session_id, MessageRow.role == "system")
+                .order_by(MessageRow.created_at.desc())
+                .limit(1)
+            )
+            return await session.scalar(stmt)
 
     @staticmethod
     async def insert_summary_message(session_id: str, summary_text: str) -> None:

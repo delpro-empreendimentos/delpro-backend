@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from fastapi import HTTPException, UploadFile
 
 from delpro_backend.db.exceptions import ResourceNotFoundError
-from delpro_backend.db.models import ChunkRow, DocumentRow
+from delpro_backend.models.v1.database_models import ChunkRow, DocumentRow
 from delpro_backend.routes.v1.documents_router import (
     delete_document,
     get_document,

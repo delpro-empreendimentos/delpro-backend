@@ -7,7 +7,7 @@ from fastapi import FastAPI
 from sqlalchemy import text
 
 from delpro_backend.db.db_service import engine
-from delpro_backend.db.models import Base
+from delpro_backend.models.v1.database_models import Base
 from delpro_backend.routes.v1.router import router
 
 # Configure logging
@@ -27,17 +27,7 @@ async def lifespan(app: FastAPI):
         # Create all tables
         await conn.run_sync(Base.metadata.create_all)
 
-        # Create HNSW index for fast vector similarity search
-        logging.info("Creating HNSW index on embeddings...")
-        await conn.execute(
-            text("""
-            CREATE INDEX IF NOT EXISTS idx_chunks_embedding_hnsw
-            ON document_chunks
-            USING hnsw (embedding vector_cosine_ops)
-            WITH (m = 16, ef_construction = 64)
-        """)
-        )
-        logging.info("Database tables and indexes ready")
+        logging.info("Database tables ready (using exact vector search for 3072-dim embeddings)")
 
     yield
 

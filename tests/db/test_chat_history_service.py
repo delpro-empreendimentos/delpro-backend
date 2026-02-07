@@ -11,7 +11,7 @@ from delpro_backend.db.chat_history_service import (
     _message_to_role,
     _row_to_message,
 )
-from delpro_backend.db.models import MessageRow
+from delpro_backend.models.v1.database_models import MessageRow
 from tests.keys_test import DEFAULT_KEYS
 
 for key, value in DEFAULT_KEYS.items():

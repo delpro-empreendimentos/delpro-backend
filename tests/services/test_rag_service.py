@@ -4,7 +4,7 @@ import os
 import unittest
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from delpro_backend.db.exceptions import DocumentProcessingError
+from delpro_backend.models.v1.exception_models import DocumentProcessingError
 from delpro_backend.services.rag_service import RAGService
 from tests.keys_test import DEFAULT_KEYS
 

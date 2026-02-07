@@ -8,7 +8,7 @@ from unittest.mock import MagicMock, patch
 
 from langchain_google_genai import ChatGoogleGenerativeAI
 
-import delpro_backend.utils.llm_builder as llm_builder_module
+import delpro_backend.utils.builders as llm_builder_module
 from tests.keys_test import DEFAULT_KEYS
 
 for key, value in DEFAULT_KEYS.items():

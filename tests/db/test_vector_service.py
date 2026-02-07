@@ -4,7 +4,7 @@ import os
 import unittest
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from delpro_backend.db.vector_service import VectorService
+from delpro_backend.services.vector_service import VectorService
 from tests.keys_test import DEFAULT_KEYS
 
 for key, value in DEFAULT_KEYS.items():

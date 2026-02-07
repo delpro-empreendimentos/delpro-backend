@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock, MagicMock
 from fastapi import HTTPException, status
 from pydantic import BaseModel, ValidationError
 
-from delpro_backend.db.exceptions import DocumentProcessingError, ResourceNotFoundError
+from delpro_backend.models.v1.exception_models import DocumentProcessingError, ResourceNotFoundError
 from delpro_backend.utils.handle_errors import handle_errors
 from tests.keys_test import DEFAULT_KEYS
 

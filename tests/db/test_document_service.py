@@ -4,9 +4,9 @@ import os
 import unittest
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from delpro_backend.db.document_service import DocumentService
+from delpro_backend.services.document_service import DocumentService
 from delpro_backend.db.exceptions import ResourceNotFoundError
-from delpro_backend.db.models import ChunkRow, DocumentRow
+from delpro_backend.models.v1.database_models import ChunkRow, DocumentRow
 from tests.keys_test import DEFAULT_KEYS
 
 for key, value in DEFAULT_KEYS.items():

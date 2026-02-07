@@ -6,8 +6,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 
-from delpro_backend.db.db_service import DbService, _row_to_message
-from delpro_backend.db.models import Base, MessageRow, ResourceDocument, ResourceRow
+from delpro_backend.db.db_service import DbService
+from delpro_backend.models.v1.database_models import Base, MessageRow, ResourceDocument, ResourceRow
 from tests.keys_test import DEFAULT_KEYS
 
 for key, value in DEFAULT_KEYS.items():

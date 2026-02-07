@@ -6,10 +6,16 @@ from functools import wraps
 from fastapi import HTTPException, status
 from pydantic import ValidationError
 
-from delpro_backend.db.exceptions import DocumentProcessingError, ResourceNotFoundError
+from delpro_backend.models.v1.exception_models import (
+    DocumentProcessingError,
+    InvalidRequestError,
+    MissingParametersRequestError,
+    ResourceNotFoundError,
+    WebhookValidationError,
+)
 from delpro_backend.utils.logger import get_logger
 
-logger_extra = {"component.name": "ErrorHandler", "component.version": "v2"}
+logger_extra = {"component.name": "ErrorHandler", "component.version": "v1"}
 logger = get_logger(__name__)
 
 
@@ -27,17 +33,20 @@ def handle_errors(func):
                 return res
 
         except ResourceNotFoundError as e:
-            logger.warning("Resource not found: %s", str(e), extra=logger_extra)
+            logger.exception("Resource not found: %s", str(e), extra=logger_extra)
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e)) from e
         except DocumentProcessingError as e:
             logger.exception("Document processing error: %s", str(e), extra=logger_extra)
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e)
             ) from e
-        except ValidationError as e:
+        except (MissingParametersRequestError, InvalidRequestError) as e:
+            logger.exception("%s", str(e))
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)) from e
+        except (ValidationError, WebhookValidationError) as e:
             logger.exception("Validation error: %s", e, extra=logger_extra)
             raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=e.errors()
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(e)
             ) from e
         except ValueError as e:
             logger.exception("Value error: %s", str(e), exc_info=e, extra=logger_extra)

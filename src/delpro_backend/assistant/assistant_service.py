@@ -1,15 +1,12 @@
 """Core assistant service that orchestrates LLM conversation with memory."""
 
-import asyncio
-
-from langchain_core.messages import SystemMessage
 from langchain_core.runnables.history import RunnableWithMessageHistory
+from langchain_google_genai import ChatGoogleGenerativeAI
 
 from delpro_backend.assistant.prompt_loader import build_chat_prompt
 from delpro_backend.db.chat_history_service import PostgresChatMessageHistory
 from delpro_backend.db.db_service import AsyncSessionFactory
 from delpro_backend.services.rag_service import RAGService
-from delpro_backend.utils.llm_builder import get_llm
 
 
 class AssistantService:
@@ -19,31 +16,37 @@ class AssistantService:
     message history into a single ``RunnableWithMessageHistory`` chain.
     """
 
-    _chain_with_history: RunnableWithMessageHistory | None = None
+    def __init__(self, rag_service: RAGService, llm: ChatGoogleGenerativeAI):
+        """Initialize AssistantService with dependencies.
 
-    @classmethod
-    def _get_chain(cls) -> RunnableWithMessageHistory:
+        Args:
+            rag_service: Service for RAG context retrieval
+            llm: LLM model for generating responses
+        """
+        self._rag_service = rag_service
+        self._llm = llm
+        self._chain_with_history: RunnableWithMessageHistory | None = None
+
+    def _get_chain(self) -> RunnableWithMessageHistory:
         """Build (or return cached) the conversation chain.
 
         Returns:
             The runnable chain with message history.
         """
-        if cls._chain_with_history is None:
+        if self._chain_with_history is None:
             prompt = build_chat_prompt()
-            llm = get_llm()
-            chain = prompt | llm
+            chain = prompt | self._llm
 
-            cls._chain_with_history = RunnableWithMessageHistory(
+            self._chain_with_history = RunnableWithMessageHistory(
                 chain,
-                get_session_history=cls._get_session_history,
+                get_session_history=self._get_session_history,
                 input_messages_key="input",
                 history_messages_key="history",
             )
 
-        return cls._chain_with_history
+        return self._chain_with_history
 
-    @staticmethod
-    def _get_session_history(session_id: str) -> PostgresChatMessageHistory:
+    def _get_session_history(self, session_id: str) -> PostgresChatMessageHistory:
         """Factory function for RunnableWithMessageHistory.
 
         Args:
@@ -57,8 +60,7 @@ class AssistantService:
             async_session_factory=AsyncSessionFactory,
         )
 
-    @staticmethod
-    async def chat(session_id: str, user_message: str, user_name: str) -> str:
+    async def chat(self, session_id: str, user_message: str, user_name: str) -> str:
         """Send a user message and get the assistant's response.
 
         Args:
@@ -69,41 +71,20 @@ class AssistantService:
         Returns:
             The assistant's text response.
         """
-        chain = __class__._get_chain()
+        # Fetch summary and RAG context in parallel
+        # summary_task = db_service.get_latest_summary(session_id)
+        rag_result = await self._rag_service.retrieve_context(user_message)
 
-        # Build dynamic context info
-        context_parts = [f"Corretor: {user_name}"]
+        # summary_text, rag_result = await asyncio.gather(summary_task, rag_task)
 
-        # Parallelize history loading and RAG retrieval
-        history_task = PostgresChatMessageHistory(
-            session_id=session_id,
-            async_session_factory=AsyncSessionFactory,
-        ).aget_messages()
-
-        rag_task = RAGService.retrieve_context(user_message, top_k=1)
-
-        # Await both in parallel
-        history, rag_result = await asyncio.gather(history_task, rag_task)
-
-        # Look for most recent SystemMessage (summary)
-        summary_text = None
-        for msg in reversed(history):
-            if isinstance(msg, SystemMessage):
-                summary_text = msg.content
-                break
-
-        if summary_text:
-            context_parts.append(f"Contexto anterior: {summary_text[:500]}")  # Limit to 500 chars
-
-        context_info = "\n".join(context_parts)
-        rag_context = rag_result["context"]
-
-        # Invoke chain with dynamic variables (including RAG context)
+        chain = self._get_chain()
         response = await chain.ainvoke(
             {
                 "input": user_message,
-                "context_info": context_info,
-                "rag_context": rag_context,
+                "user_name": user_name,
+                "user_input": user_message,
+                # "context_info": summary_text,
+                "rag_context": rag_result,
             },
             config={"configurable": {"session_id": session_id}},
         )
@@ -115,11 +96,8 @@ class AssistantService:
                 first_item = content[0]
                 if isinstance(first_item, dict):
                     return first_item.get("text", str(content))
-                else:
-                    return str(first_item)
+                return str(first_item)
             elif isinstance(content, str):
                 return content
-            else:
-                return str(content)
-        else:
-            return str(response)
+            return str(content)
+        return str(response)
