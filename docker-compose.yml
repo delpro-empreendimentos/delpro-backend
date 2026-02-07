@@ -1,4 +1,21 @@
 services:
+  fastapi:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: fastapi
+    env_file:
+      - .env
+    environment:
+      # Override DATABASE_URL to use docker network hostname
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+    ports:
+      - "8000:8000"
+    depends_on:
+      - postgres
+      - redis
+    restart: unless-stopped
+
   postgres:
     image: pgvector/pgvector:pg16
     container_name: postgres
@@ -44,23 +61,6 @@ services:
     restart: unless-stopped
     logging:
       driver: "none"
-
-  fastapi:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    container_name: fastapi
-    env_file:
-      - .env
-    environment:
-      # Override DATABASE_URL to use docker network hostname
-      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
-    ports:
-      - "8000:8000"
-    depends_on:
-      - postgres
-      - redis
-    restart: unless-stopped
 
 volumes:
   pgdata:
