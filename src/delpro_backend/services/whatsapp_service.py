@@ -5,7 +5,6 @@ import hmac
 import json
 
 import httpx
-import redis.asyncio as aioredis
 from fastapi import HTTPException, Request
 
 from delpro_backend.assistant.assistant_service import AssistantService
@@ -19,26 +18,30 @@ logger = get_logger(__name__)
 class WhatsAppService:
     """Service for WhatsApp message operations."""
 
-    _MESSAGE_TTL_SECONDS = 300  # 5 minutes
-
-    def __init__(self, assistant_service: AssistantService, redis_client: aioredis.Redis):
+    def __init__(self, assistant_service: AssistantService):
         """WhatsApp service class module."""
         self._assistant_service = assistant_service
-        self._redis = redis_client
 
-    async def _is_message_processed(self, message_id: str) -> bool:
-        """Check if message was already processed using Redis SET NX EX.
+    async def signature_required(self, request: Request) -> dict:
+        """Dependency to ensure incoming requests are valid and signed correctly.
 
-        Args:
-            message_id: The WhatsApp message ID.
-
-        Returns:
-            True if already processed, False if this is the first time.
+        Equivalent to Flask's @signature_required decorator.
         """
-        was_set = await self._redis.set(
-            f"wpp:msg:{message_id}", "1", nx=True, ex=self._MESSAGE_TTL_SECONDS
-        )
-        return not was_set
+        signature = request.headers.get("X-Hub-Signature-256", "")[7:]
+        body = await request.body()
+        payload = body.decode("utf-8")
+
+        expected_signature = hmac.new(
+            bytes(settings.WHATSAPP_APP_SECRET, "latin-1"),
+            msg=payload.encode("utf-8"),
+            digestmod=hashlib.sha256,
+        ).hexdigest()
+
+        if not hmac.compare_digest(expected_signature, signature):
+            logger.info("Signature verification failed!", extra=logger_extra)
+            raise HTTPException(status_code=403, detail="Invalid signature")
+
+        return json.loads(payload)
 
     def is_valid_whatsapp_message(self, body: dict) -> bool:
         """Check if the incoming webhook event has a valid WhatsApp message structure."""
@@ -96,7 +99,7 @@ class WhatsAppService:
             logger.error("WhatsApp request failed: %s", e, extra=logger_extra)
             raise e
 
-    async def handle_message(self, body: dict) -> str | None:
+    async def handle_message(self, body: dict):
         """Process an incoming WhatsApp message and send a response.
 
         Args:
@@ -112,10 +115,6 @@ class WhatsAppService:
 
         message = body["entry"][0]["changes"][0]["value"]["messages"][0]
         message_id = message["id"]
-
-        if await self._is_message_processed(message_id):
-            logger.info("Duplicate message %s, ignoring", message_id, extra=logger_extra)
-            return None
 
         contact = body["entry"][0]["changes"][0]["value"]["contacts"][0]
         sender_phone_number = contact.get("wa_id") or contact.get("sender_phone_number")
@@ -136,27 +135,8 @@ class WhatsAppService:
             user_name=sender_name,
         )
 
+        # to test only
+        if sender_phone_number == "123":
+            return response_text
+
         await self._send_whatsapp_message(sender_phone_number, response_text)
-
-        return response_text
-
-    async def signature_required(self, request: Request) -> dict:
-        """Dependency to ensure incoming requests are valid and signed correctly.
-
-        Equivalent to Flask's @signature_required decorator.
-        """
-        signature = request.headers.get("X-Hub-Signature-256", "")[7:]
-        body = await request.body()
-        payload = body.decode("utf-8")
-
-        expected_signature = hmac.new(
-            bytes(settings.WHATSAPP_APP_SECRET, "latin-1"),
-            msg=payload.encode("utf-8"),
-            digestmod=hashlib.sha256,
-        ).hexdigest()
-
-        if not hmac.compare_digest(expected_signature, signature):
-            logger.info("Signature verification failed!", extra=logger_extra)
-            raise HTTPException(status_code=403, detail="Invalid signature")
-
-        return json.loads(payload)

@@ -2,7 +2,6 @@
 
 import threading
 
-import redis.asyncio as aioredis
 from langchain_google_genai import ChatGoogleGenerativeAI, GoogleGenerativeAIEmbeddings
 
 from delpro_backend.utils.settings import settings
@@ -13,8 +12,6 @@ _lock = threading.Lock()
 _summary_lock = threading.Lock()
 _embeddings: GoogleGenerativeAIEmbeddings | None = None
 _embeddings_lock = threading.Lock()
-_redis_client: aioredis.Redis | None = None
-_redis_lock = threading.Lock()
 
 
 def get_llm() -> ChatGoogleGenerativeAI:
@@ -78,19 +75,3 @@ def get_embeddings() -> GoogleGenerativeAIEmbeddings:
                 )
 
     return _embeddings
-
-
-def get_redis() -> aioredis.Redis:
-    """Return the singleton async Redis client.
-
-    Returns:
-        The configured async Redis client.
-    """
-    global _redis_client
-
-    if _redis_client is None:
-        with _redis_lock:
-            if _redis_client is None:
-                _redis_client = aioredis.from_url(settings.REDIS_URL)
-
-    return _redis_client

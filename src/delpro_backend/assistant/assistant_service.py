@@ -1,53 +1,43 @@
-"""Core assistant service that orchestrates LLM conversation with memory."""
+"""Core assistant service that orchestrates LLM conversation with memory and tool calling."""
 
-from langchain_core.runnables.history import RunnableWithMessageHistory
+import asyncio
+
+from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 from langchain_google_genai import ChatGoogleGenerativeAI
 
+from delpro_backend.assistant.agent_tools import build_tools
 from delpro_backend.assistant.prompt_loader import build_chat_prompt
 from delpro_backend.db.chat_history_service import PostgresChatMessageHistory
 from delpro_backend.db.db_service import AsyncSessionFactory
 from delpro_backend.services.rag_service import RAGService
+from delpro_backend.utils.logger import get_logger
+
+logger = get_logger(__name__)
 
 
 class AssistantService:
     """Service that manages conversational interactions with the LLM.
 
-    Wires together the prompt template, chat model, and persistent
-    message history into a single ``RunnableWithMessageHistory`` chain.
+    Uses ``bind_tools`` for tool calling and manages conversation history
+    manually via ``PostgresChatMessageHistory``.
     """
 
     def __init__(self, rag_service: RAGService, llm: ChatGoogleGenerativeAI):
         """Initialize AssistantService with dependencies.
 
         Args:
-            rag_service: Service for RAG context retrieval
-            llm: LLM model for generating responses
+            rag_service: Service for RAG context retrieval.
+            llm: LLM model for generating responses.
         """
         self._rag_service = rag_service
         self._llm = llm
-        self._chain_with_history: RunnableWithMessageHistory | None = None
-
-    def _get_chain(self) -> RunnableWithMessageHistory:
-        """Build (or return cached) the conversation chain.
-
-        Returns:
-            The runnable chain with message history.
-        """
-        if self._chain_with_history is None:
-            prompt = build_chat_prompt()
-            chain = prompt | self._llm
-
-            self._chain_with_history = RunnableWithMessageHistory(
-                chain,
-                get_session_history=self._get_session_history,
-                input_messages_key="input",
-                history_messages_key="history",
-            )
-
-        return self._chain_with_history
+        self._prompt_template = build_chat_prompt()
+        tools = build_tools(self._rag_service)
+        self._llm_with_tools = self._llm.bind_tools(tools)
+        self._tools_by_name = {t.name: t for t in tools}
 
     def _get_session_history(self, session_id: str) -> PostgresChatMessageHistory:
-        """Factory function for RunnableWithMessageHistory.
+        """Create a PostgresChatMessageHistory for the given session.
 
         Args:
             session_id: The conversation/session identifier.
@@ -60,36 +50,16 @@ class AssistantService:
             async_session_factory=AsyncSessionFactory,
         )
 
-    async def chat(self, session_id: str, user_message: str, user_name: str) -> str:
-        """Send a user message and get the assistant's response.
+    @staticmethod
+    def _extract_text(response) -> str:
+        """Extract plain text from an LLM response.
 
         Args:
-            session_id: Identifies the conversation (e.g., phone number).
-            user_message: The user's input text.
-            user_name: Name of the broker/user (from WhatsApp payload).
+            response: The LLM response object.
 
         Returns:
-            The assistant's text response.
+            The extracted text content as a string.
         """
-        # Fetch summary and RAG context in parallel
-        # summary_task = db_service.get_latest_summary(session_id)
-        rag_result = await self._rag_service.retrieve_context(user_message)
-
-        # summary_text, rag_result = await asyncio.gather(summary_task, rag_task)
-
-        chain = self._get_chain()
-        response = await chain.ainvoke(
-            {
-                "input": user_message,
-                "user_name": user_name,
-                "user_input": user_message,
-                # "context_info": summary_text,
-                "rag_context": rag_result,
-            },
-            config={"configurable": {"session_id": session_id}},
-        )
-
-        # Extract text from response
         if hasattr(response, "content"):
             content = response.content
             if isinstance(content, list) and len(content) > 0:
@@ -101,3 +71,107 @@ class AssistantService:
                 return content
             return str(content)
         return str(response)
+
+    async def _execute_tools(self, ai_message: AIMessage) -> list[ToolMessage]:
+        """Execute all tool calls from an AIMessage in parallel.
+
+        Builds coroutines only for known tools and runs them concurrently
+        with ``asyncio.gather``. Unknown tools are added directly to the
+        result list as error messages without being scheduled.
+
+        Args:
+            ai_message: The AIMessage containing tool_calls.
+
+        Returns:
+            List of ToolMessages with results, preserving the original call order.
+        """
+        tool_messages: list[ToolMessage | None] = [None] * len(ai_message.tool_calls)
+        coroutines = []
+        index_map: list[int] = []
+
+        for idx, tool_call in enumerate(ai_message.tool_calls):
+            tool_name = tool_call["name"]
+            tool_fn = self._tools_by_name.get(tool_name)
+
+            if tool_fn is None:
+                logger.warning("Tool '%s' not found, skipping.", tool_name)
+                tool_messages[idx] = ToolMessage(
+                    content=f"Function {tool_name} failed to run",
+                    tool_call_id=tool_call["id"],
+                )
+            else:
+                coroutines.append(tool_fn.ainvoke(tool_call["args"]))
+                index_map.append(idx)
+
+        results = await asyncio.gather(*coroutines, return_exceptions=True)
+
+        for coroutine_idx, result in enumerate(results):
+            original_idx = index_map[coroutine_idx]
+            tool_call = ai_message.tool_calls[original_idx]
+
+            if isinstance(result, Exception):
+                logger.exception("Tool '%s' failed: %s", tool_call["name"], result)
+                content = f"Function {tool_call['name']} failed to run"
+            else:
+                content = str(result)
+
+            tool_messages[original_idx] = ToolMessage(content=content, tool_call_id=tool_call["id"])
+
+        return [msg for msg in tool_messages if msg is not None]
+
+    async def chat(self, session_id: str, user_message: str, user_name: str) -> str:
+        """Send a user message, run tool loop if needed, return final text.
+
+        Execution follows a 2-round pattern:
+        - Round 1: invoke LLM with prompt + history. If no tool_calls, return directly.
+        - Round 2 (only if tool_calls): execute all tools in parallel, then invoke
+          LLM again with tool results for the final answer.
+
+        Args:
+            session_id: Identifies the conversation (e.g., phone number).
+            user_message: The user's input text.
+            user_name: Name of the broker/user (from WhatsApp payload).
+
+        Returns:
+            The assistant's text response.
+        """
+        # 1. Load conversation history
+        history_store = self._get_session_history(session_id)
+        history_messages = await history_store.aget_messages()
+
+        # 2. Build prompt messages (system + history + current input)
+        prompt_value = await self._prompt_template.ainvoke(
+            {"input": user_message, "user_name": user_name, "history": history_messages}
+        )
+        messages = prompt_value.to_messages()
+
+        # 3. Round 1: invoke LLM with tools bound
+        response = await self._llm_with_tools.ainvoke(messages)
+
+        # 4. If no tool calls, return the text directly
+        if not response.tool_calls:
+            final_text = self._extract_text(response)
+            await history_store.aadd_messages(
+                [HumanMessage(content=user_message), AIMessage(content=final_text)]
+            )
+            return final_text
+
+        # 5. Tool calls present: execute all tools in parallel
+        logger.info(
+            "Round 1 returned %d tool call(s), executing in parallel...", len(response.tool_calls)
+        )
+        tool_messages = await self._execute_tools(response)
+
+        # 6. Round 2: re-invoke LLM with tool results for final answer
+        messages.append(response)  # AIMessage with tool_calls
+        messages.extend(tool_messages)  # ToolMessages with results
+
+        final_response = await self._llm_with_tools.ainvoke(messages)
+        final_text = self._extract_text(final_response)
+
+        # 7. Save only clean messages to history
+        await history_store.aadd_messages(
+            [HumanMessage(content=user_message), AIMessage(content=final_text)]
+        )
+
+        return final_text

@@ -1,16 +1,17 @@
 """WhatsApp webhook router for handling incoming messages and verification."""
 
+import time
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Query, status
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 
 from delpro_backend.assistant.assistant_service import AssistantService
 from delpro_backend.models.v1.exception_models import WebhookValidationError
 from delpro_backend.services.rag_service import RAGService
 from delpro_backend.services.vector_service import VectorService
 from delpro_backend.services.whatsapp_service import WhatsAppService
-from delpro_backend.utils.builders import get_embeddings, get_llm, get_redis
+from delpro_backend.utils.builders import get_embeddings, get_llm
 from delpro_backend.utils.handle_errors import handle_errors
 from delpro_backend.utils.logger import get_logger
 from delpro_backend.utils.settings import settings
@@ -24,12 +25,11 @@ whatsapp_router = APIRouter(prefix="/webhook", tags=["webhook"])
 _embeddings = get_embeddings()
 _llm = get_llm()
 
-_redis = get_redis()
 _vector_service = VectorService(embeddings=_embeddings)
 _rag_service = RAGService(vector_service=_vector_service, embeddings=_embeddings)
 _assistant_service = AssistantService(rag_service=_rag_service, llm=_llm)
 
-whatsapp_service = WhatsAppService(assistant_service=_assistant_service, redis_client=_redis)
+whatsapp_service = WhatsAppService(assistant_service=_assistant_service)
 
 
 @whatsapp_router.get("")
@@ -51,8 +51,12 @@ async def validate_webhook(
 @handle_errors
 async def receive_message(
     body: Annotated[dict, Depends(whatsapp_service.signature_required)],
-) -> JSONResponse:
+) -> Response:
     """POST /webhook - Handle incoming WhatsApp messages."""
-    message = await whatsapp_service.handle_message(body)
+    before = time.time()
 
-    return JSONResponse(content=message, status_code=status.HTTP_200_OK)
+    await whatsapp_service.handle_message(body)
+
+    logger.info(f"Time elapsed: {time.time() - before}")
+
+    return Response(status_code=status.HTTP_200_OK)
