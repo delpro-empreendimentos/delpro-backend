@@ -6,14 +6,13 @@ from fastapi import APIRouter, status
 from fastapi.responses import Response
 
 from delpro_backend.assistant.assistant_service import AssistantService
+from delpro_backend.services.image_service import ImageService
 from delpro_backend.services.rag_service import RAGService
 from delpro_backend.services.vector_service import VectorService
 from delpro_backend.services.whatsapp_service import WhatsAppService
 from delpro_backend.utils.builders import get_embeddings, get_llm
 from delpro_backend.utils.handle_errors import handle_errors
 from delpro_backend.utils.logger import get_logger
-
-# from delpro_backend.utils.settings import settings
 
 logger_extra = {"component.name": "WebhookRouter", "component.version": "v1"}
 logger = get_logger(__name__)
@@ -26,7 +25,10 @@ _llm = get_llm()
 
 _vector_service = VectorService(embeddings=_embeddings)
 _rag_service = RAGService(vector_service=_vector_service, embeddings=_embeddings)
-_assistant_service = AssistantService(rag_service=_rag_service, llm=_llm)
+_image_service = ImageService(embeddings=_embeddings)
+_assistant_service = AssistantService(
+    rag_service=_rag_service, llm=_llm, image_service=_image_service
+)
 
 whatsapp_service = WhatsAppService(assistant_service=_assistant_service)
 

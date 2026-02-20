@@ -8,6 +8,7 @@ from fastapi.responses import JSONResponse, Response
 
 from delpro_backend.assistant.assistant_service import AssistantService
 from delpro_backend.models.v1.exception_models import WebhookValidationError
+from delpro_backend.services.image_service import ImageService
 from delpro_backend.services.rag_service import RAGService
 from delpro_backend.services.vector_service import VectorService
 from delpro_backend.services.whatsapp_service import WhatsAppService
@@ -27,7 +28,10 @@ _llm = get_llm()
 
 _vector_service = VectorService(embeddings=_embeddings)
 _rag_service = RAGService(vector_service=_vector_service, embeddings=_embeddings)
-_assistant_service = AssistantService(rag_service=_rag_service, llm=_llm)
+_image_service = ImageService(embeddings=_embeddings)
+_assistant_service = AssistantService(
+    rag_service=_rag_service, llm=_llm, image_service=_image_service
+)
 
 whatsapp_service = WhatsAppService(assistant_service=_assistant_service)
 

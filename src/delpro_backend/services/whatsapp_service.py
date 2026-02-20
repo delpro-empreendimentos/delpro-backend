@@ -4,10 +4,10 @@ import hashlib
 import hmac
 import json
 
-import httpx
 from fastapi import HTTPException, Request
 
 from delpro_backend.assistant.assistant_service import AssistantService
+from delpro_backend.services.whatsapp_api import send_message
 from delpro_backend.utils.logger import get_logger
 from delpro_backend.utils.settings import settings
 
@@ -51,53 +51,23 @@ class WhatsAppService:
         except (KeyError, IndexError, TypeError):
             return False
 
-    async def _send_whatsapp_message(self, send_message_to: str, text: str):
-        """Send a text message via WhatsApp API.
+    def extract_information_whatsapp_message(self, body: dict) -> tuple[str, str, str, str]:
+        """Extract message information from a WhatsApp webhook payload.
 
         Args:
-            send_message_to: The phone number to send message.
-            text: The message text to send.
+            body: The webhook payload from WhatsApp.
 
         Returns:
-            The HTTP response from the WhatsApp API.
-
-        Raises:
-            httpx.TimeoutException: If the request times out.
-            httpx.RequestError: If the request fails.
+            A tuple of (message_id, text, sender_phone_number, sender_name).
         """
-        headers = {
-            "Content-type": "application/json",
-            "Authorization": f"Bearer {settings.WHATSAPP_ACCESS_TOKEN}",
-        }
+        message = body["entry"][0]["changes"][0]["value"]["messages"][0]
+        message_id = message["id"]
 
-        url = (
-            f"https://graph.facebook.com/{settings.WHATSAPP_API_VERSION}/"
-            f"{settings.WHATSAPP_PHONE_NUMBER_ID}/messages"
-        )
-
-        data = json.dumps(
-            {
-                "messaging_product": "whatsapp",
-                "recipient_type": "individual",
-                "to": send_message_to,
-                "type": "text",
-                "text": {"preview_url": False, "body": text},
-            }
-        )
-
-        try:
-            async with httpx.AsyncClient() as client:
-                response = await client.post(url, content=data, headers=headers, timeout=10.0)
-
-                response.raise_for_status()
-
-                logger.info("WhatsApp message sent to %s", send_message_to, extra=logger_extra)
-        except httpx.TimeoutException as e:
-            logger.error("WhatsApp request timed out: %s", e, extra=logger_extra)
-            raise e
-        except httpx.RequestError as e:
-            logger.error("WhatsApp request failed: %s", e, extra=logger_extra)
-            raise e
+        contact = body["entry"][0]["changes"][0]["value"]["contacts"][0]
+        sender_phone_number = contact.get("wa_id") or contact.get("sender_phone_number")
+        sender_name = contact["profile"]["name"]
+        text = message["text"]["body"]
+        return message_id, text, sender_phone_number, sender_name
 
     async def handle_message(self, body: dict):
         """Process an incoming WhatsApp message and send a response.
@@ -113,13 +83,9 @@ class WhatsAppService:
             logger.info("Non-message webhook event, acknowledging", extra=logger_extra)
             return None
 
-        message = body["entry"][0]["changes"][0]["value"]["messages"][0]
-        message_id = message["id"]
-
-        contact = body["entry"][0]["changes"][0]["value"]["contacts"][0]
-        sender_phone_number = contact.get("wa_id") or contact.get("sender_phone_number")
-        sender_name = contact["profile"]["name"]
-        text = message["text"]["body"]
+        message_id, text, sender_phone_number, sender_name = (
+            self.extract_information_whatsapp_message(body=body)
+        )
 
         logger.info(
             "Processing message %s from %s (%s)",
@@ -130,13 +96,13 @@ class WhatsAppService:
         )
 
         response_text = await self._assistant_service.chat(
-            session_id=sender_phone_number,
+            sender_phone_number=sender_phone_number,
             user_message=text,
             user_name=sender_name,
         )
 
-        # to test only
+        # test only
         if sender_phone_number == "123":
             return response_text
 
-        await self._send_whatsapp_message(sender_phone_number, response_text)
+        await send_message(to=sender_phone_number, text=response_text)

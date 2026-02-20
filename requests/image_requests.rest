@@ -1,0 +1,39 @@
+@BaseUrl = {{$dotenv BASE_URL}}/images
+
+### Upload an image
+POST {{BaseUrl}}
+Content-Type: multipart/form-data; boundary=boundary
+
+--boundary
+Content-Disposition: form-data; name="file"; filename="piscina_free.jpeg"
+Content-Type: image/png
+
+< test_images/piscina_free.jpeg
+--boundary
+Content-Disposition: form-data; name="description"
+
+Imagem da piscina do free
+--boundary--
+
+### Get list of images
+GET {{BaseUrl}}
+
+@imageid = 81f51317-fd86-4090-94ee-9cd69f500e79
+
+### Get image metadata
+GET {{BaseUrl}}/{{imageid}}
+
+### Get image content (raw bytes for preview)
+GET {{BaseUrl}}/{{imageid}}/content
+
+### Update image metadata
+PUT {{BaseUrl}}/{{imageid}}
+Content-Type: application/json
+
+{
+  "description": "Nova descrição da imagem",
+  "filename": "novo_nome.jpg"
+}
+
+### Delete an image
+DELETE {{BaseUrl}}/{{imageid}}

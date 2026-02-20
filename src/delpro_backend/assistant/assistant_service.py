@@ -9,6 +9,7 @@ from delpro_backend.assistant.agent_tools import build_tools
 from delpro_backend.assistant.prompt_loader import build_chat_prompt
 from delpro_backend.db.chat_history_service import PostgresChatMessageHistory
 from delpro_backend.db.db_service import AsyncSessionFactory
+from delpro_backend.services.image_service import ImageService
 from delpro_backend.services.rag_service import RAGService
 from delpro_backend.utils.logger import get_logger
 
@@ -22,17 +23,21 @@ class AssistantService:
     manually via ``PostgresChatMessageHistory``.
     """
 
-    def __init__(self, rag_service: RAGService, llm: ChatGoogleGenerativeAI):
+    def __init__(
+        self, rag_service: RAGService, llm: ChatGoogleGenerativeAI, image_service: ImageService
+    ):
         """Initialize AssistantService with dependencies.
 
         Args:
             rag_service: Service for RAG context retrieval.
             llm: LLM model for generating responses.
+            image_service: Service for image CRUD and catalog.
         """
         self._rag_service = rag_service
+        self._image_service = image_service
         self._llm = llm
         self._prompt_template = build_chat_prompt()
-        tools = build_tools(self._rag_service)
+        tools = build_tools(self._rag_service, self._image_service)
         self._llm_with_tools = self._llm.bind_tools(tools)
         self._tools_by_name = {t.name: t for t in tools}
 
@@ -119,7 +124,7 @@ class AssistantService:
 
         return [msg for msg in tool_messages if msg is not None]
 
-    async def chat(self, session_id: str, user_message: str, user_name: str) -> str:
+    async def chat(self, sender_phone_number: str, user_message: str, user_name: str) -> str:
         """Send a user message, run tool loop if needed, return final text.
 
         Execution follows a 2-round pattern:
@@ -128,27 +133,33 @@ class AssistantService:
           LLM again with tool results for the final answer.
 
         Args:
-            session_id: Identifies the conversation (e.g., phone number).
+            sender_phone_number: Identifies the conversation (e.g., phone number).
             user_message: The user's input text.
             user_name: Name of the broker/user (from WhatsApp payload).
+            phone_number: The user's WhatsApp phone number.
 
         Returns:
             The assistant's text response.
         """
         # 1. Load conversation history
-        history_store = self._get_session_history(session_id)
+        history_store = self._get_session_history(sender_phone_number)
         history_messages = await history_store.aget_messages()
 
         # 2. Build prompt messages (system + history + current input)
         prompt_value = await self._prompt_template.ainvoke(
-            {"input": user_message, "user_name": user_name, "history": history_messages}
+            {
+                "input": user_message,
+                "user_name": user_name,
+                "sender_phone_number": sender_phone_number,
+                "history": history_messages,
+            }
         )
         messages = prompt_value.to_messages()
 
-        # 3. Round 1: invoke LLM with tools bound
+        # 4. Round 1: invoke LLM with tools bound
         response = await self._llm_with_tools.ainvoke(messages)
 
-        # 4. If no tool calls, return the text directly
+        # 5. If no tool calls, return the text directly
         if not response.tool_calls:
             final_text = self._extract_text(response)
             await history_store.aadd_messages(
@@ -156,20 +167,20 @@ class AssistantService:
             )
             return final_text
 
-        # 5. Tool calls present: execute all tools in parallel
+        # 6. Tool calls present: execute all tools in parallel
         logger.info(
             "Round 1 returned %d tool call(s), executing in parallel...", len(response.tool_calls)
         )
         tool_messages = await self._execute_tools(response)
 
-        # 6. Round 2: re-invoke LLM with tool results for final answer
+        # 7. Round 2: re-invoke LLM with tool results for final answer
         messages.append(response)  # AIMessage with tool_calls
         messages.extend(tool_messages)  # ToolMessages with results
 
         final_response = await self._llm_with_tools.ainvoke(messages)
         final_text = self._extract_text(final_response)
 
-        # 7. Save only clean messages to history
+        # 8. Save only clean messages to history
         await history_store.aadd_messages(
             [HumanMessage(content=user_message), AIMessage(content=final_text)]
         )

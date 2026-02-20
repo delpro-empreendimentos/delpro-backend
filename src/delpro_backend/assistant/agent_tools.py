@@ -4,19 +4,24 @@ All tools the agent has access to are defined here. Each tool must have
 its description written in American English.
 """
 
+import asyncio
+
 from langchain_core.tools import tool
 
+from delpro_backend.services.image_service import ImageService
 from delpro_backend.services.rag_service import RAGService
+from delpro_backend.services.whatsapp_api import send_message, upload_media
 from delpro_backend.utils.logger import get_logger
 
 logger = get_logger(__name__)
 
 
-def build_tools(rag_service: RAGService) -> list:
+def build_tools(rag_service: RAGService, image_service: ImageService) -> list:
     """Build all agent tools with injected dependencies.
 
     Args:
         rag_service: Service for RAG context retrieval.
+        image_service: Service for image storage and semantic search.
 
     Returns:
         List of LangChain tools available to the agent.
@@ -41,4 +46,60 @@ def build_tools(rag_service: RAGService) -> list:
         logger.info("Retrieved content: %s", result)
         return result or "No relevant information found in the documents."
 
-    return [search_knowledge_base]
+    @tool
+    async def send_whatsapp_image(phone_number: str, descriptions: list[str]) -> str:
+        """Search for images by description and send them to a WhatsApp user.
+
+        Use this tool when the user requests images, photos, floor plans, or any
+        visual material. Provide one natural-language description per image you want
+        to find. The tool searches the image database semantically and sends the
+        best match for each description.
+
+        Args:
+            phone_number: The recipient's WhatsApp phone number.
+            descriptions: List of natural-language descriptions, one per desired image
+                (e.g. ["piscina Edifício Solar", "planta 2 quartos"]).
+
+        Returns:
+            A summary of which images were sent and which had no match.
+        """
+        logger.info(
+            "Executing tool send_whatsapp_image to %s, descriptions=%s",
+            phone_number,
+            descriptions,
+        )
+
+        # Search all descriptions in parallel
+        search_results = await asyncio.gather(
+            *[image_service.search_image_by_description(d) for d in descriptions]
+        )
+
+        not_found: list[str] = []
+        send_tasks = []
+
+        for desc, img in zip(descriptions, search_results, strict=True):
+            if img is None:
+                not_found.append(desc)
+            else:
+
+                async def _upload_and_send(image=img):
+                    media_id = await upload_media(
+                        image.file_content, image.content_type, image.filename
+                    )
+                    await send_message(to=phone_number, msg_type="image", media_id=media_id)
+
+                send_tasks.append(_upload_and_send())
+
+        if not send_tasks:
+            return f"No matching images found for: {descriptions}"
+
+        await asyncio.gather(*send_tasks)
+
+        sent_count = len(send_tasks)
+        parts = [f"Sent {sent_count} image(s) to {phone_number}."]
+        if not_found:
+            parts.append(f"Not found for: {not_found}")
+
+        return " ".join(parts)
+
+    return [search_knowledge_base, send_whatsapp_image]
