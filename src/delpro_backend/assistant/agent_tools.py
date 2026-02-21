@@ -74,21 +74,16 @@ def build_tools(rag_service: RAGService, image_service: ImageService) -> list:
             *[image_service.search_image_by_description(d) for d in descriptions]
         )
 
-        not_found: list[str] = []
+        not_found = []
         send_tasks = []
 
         for desc, img in zip(descriptions, search_results, strict=True):
             if img is None:
                 not_found.append(desc)
             else:
-
-                async def _upload_and_send(image=img):
-                    media_id = await upload_media(
-                        image.file_content, image.content_type, image.filename
-                    )
-                    await send_message(to=phone_number, msg_type="image", media_id=media_id)
-
-                send_tasks.append(_upload_and_send())
+                send_tasks.append(upload_media(
+                        img.file_content, img.content_type, img.filename, phone_number=phone_number
+                    ))
 
         if not send_tasks:
             return f"No matching images found for: {descriptions}"
