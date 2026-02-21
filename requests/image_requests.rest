@@ -5,20 +5,20 @@ POST {{BaseUrl}}
 Content-Type: multipart/form-data; boundary=boundary
 
 --boundary
-Content-Disposition: form-data; name="file"; filename="piscina_free.jpeg"
-Content-Type: image/png
+Content-Disposition: form-data; name="file"; filename="planta_baixa_free.jpg"
+Content-Type: image/jpg
 
-< test_images/piscina_free.jpeg
+< test_images/planta_baixa_free.jpg
 --boundary
 Content-Disposition: form-data; name="description"
 
-Imagem da piscina do free
+Imagem da planta baixa de um apartamento do predio Free
 --boundary--
 
 ### Get list of images
 GET {{BaseUrl}}
 
-@imageid = 81f51317-fd86-4090-94ee-9cd69f500e79
+@imageid = 54ae687c-f701-49d8-8bb6-2567d635622e
 
 ### Get image metadata
 GET {{BaseUrl}}/{{imageid}}

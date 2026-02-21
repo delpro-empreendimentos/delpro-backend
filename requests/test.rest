@@ -1,6 +1,7 @@
 @BaseUrl = {{$dotenv BASE_URL}}
 
-@test-message = queria saber mais sobre o free
+@phone-id=
+@test-message = me envie uma foto da piscina do free
 
 ### Send a test WhatsApp message (no signature required)
 POST {{BaseUrl}}/test
@@ -19,7 +20,7 @@ Content-Type: application/json
                       "profile": {
                           "name": "Test User"
                       },
-                      "sender_phone_number": "123"
+                      "sender_phone_number": "{{phone-id}}"
                     }
                 ],
                 "messages": [
