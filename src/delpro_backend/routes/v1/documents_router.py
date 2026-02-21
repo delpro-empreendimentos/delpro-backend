@@ -1,33 +1,29 @@
 """Router for document CRUD operations."""
 
-import logging
-
-from fastapi import APIRouter, HTTPException, Response, UploadFile, status
+from fastapi import APIRouter, Response, UploadFile, status
 from fastapi.responses import JSONResponse
 
-from delpro_backend.db.document_service import DocumentService
 from delpro_backend.models.v1.document_models import (
     DocumentListItem,
     GetDocumentResponse,
-    UploadedDocument,
 )
+from delpro_backend.services.document_service import DocumentService
 from delpro_backend.services.rag_service import RAGService
+from delpro_backend.services.vector_service import VectorService
+from delpro_backend.utils.builders import get_embeddings
 from delpro_backend.utils.handle_errors import handle_errors
-from delpro_backend.utils.settings import settings
+from delpro_backend.utils.logger import get_logger
 
-logger = logging.getLogger(__name__)
+logger_extra = {"component.name": "DocumentRouter", "component.version": "v1"}
+logger = get_logger(__name__)
 
 documents_router = APIRouter(prefix="/documents", tags=["documents"])
 
-# Constants
-ALLOWED_FILE_TYPES = ["application/pdf", "text/plain"]
-MAX_FILES_PER_UPLOAD = 5
-
-
-@documents_router.get("/test")
-async def test_endpoint():
-    """Simple test endpoint to verify router is loaded."""
-    return {"message": "Documents router is working!"}
+# Initialize services with dependency injection
+_embeddings = get_embeddings()
+_vector_service = VectorService(embeddings=_embeddings)
+_rag_service = RAGService(vector_service=_vector_service, embeddings=_embeddings)
+document_service = DocumentService(rag_service=_rag_service)
 
 
 @documents_router.post("")
@@ -41,72 +37,11 @@ async def upload_documents(files: list[UploadFile]):
     Returns:
         Upload confirmation with document IDs and status
     """
-    # Validate number of files
-    if not files:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="No files provided",
-        )
-
-    if len(files) > MAX_FILES_PER_UPLOAD:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Too many files. Maximum: {MAX_FILES_PER_UPLOAD}",
-        )
-
-    # Validate ALL files BEFORE reading them
-    for file in files:
-        # Validate file type
-        content_type = file.content_type or "application/octet-stream"
-        if content_type not in ALLOWED_FILE_TYPES:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Invalid file type '{content_type}' for '{file.filename}'. "
-                f"Allowed: {', '.join(ALLOWED_FILE_TYPES)}",
-            )
-
-    # All files are valid - now read and process them
-    uploaded_documents: list[UploadedDocument] = []
-
-    for file in files:
-        # Read file
-        file_bytes = await file.read()
-        file_size_mb = len(file_bytes) / (1024 * 1024)
-
-        # Validate file size
-        if file_size_mb > settings.MAX_FILE_SIZE_MB:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"File '{file.filename}' too large ({file_size_mb:.2f}MB). "
-                f"Maximum: {settings.MAX_FILE_SIZE_MB}MB",
-            )
-
-        # Get content type with fallback
-        content_type = file.content_type or "application/octet-stream"
-
-        # Create document record
-        doc = await DocumentService.create_document(
-            filename=file.filename or "untitled",
-            content_type=content_type,
-            file_bytes=file_bytes,
-        )
-
-        # Process document SYNCHRONOUSLY
-        chunk_count = await RAGService.process_document(doc.id, file_bytes, content_type)
-
-        uploaded_documents.append(
-            UploadedDocument(
-                id=doc.id,
-                filename=doc.filename,
-                file_size_bytes=doc.file_size_bytes,
-                status="completed",
-                chunk_count=chunk_count,
-            )
-        )
+    documents = await document_service.create_document(files)
 
     return JSONResponse(
         status_code=status.HTTP_201_CREATED,
-        content=[doc.model_dump() for doc in uploaded_documents],
+        content=[doc.model_dump() for doc in documents],
     )
 
 
@@ -118,7 +53,7 @@ async def list_documents():
     Returns:
         List of documents with chunk counts
     """
-    docs_with_counts = await DocumentService.list_documents()
+    docs_with_counts = await document_service.list_documents()
 
     documents = [
         DocumentListItem(
@@ -147,7 +82,7 @@ async def get_document(document_id: str):
     Returns:
         Document details with chunk preview
     """
-    doc, chunks = await DocumentService.get_document_with_chunks(document_id)
+    doc, chunks = await document_service.get_document_with_chunks(document_id)
 
     # Get first 3 chunks as preview
     chunks_preview = [chunk.content[:400] + "..." for chunk in chunks[:3]]
@@ -175,6 +110,6 @@ async def delete_document(document_id: str):
     Returns:
         Deletion confirmation
     """
-    await DocumentService.delete_document(document_id)
+    await document_service.delete_document(document_id)
 
     return Response(status_code=status.HTTP_204_NO_CONTENT)

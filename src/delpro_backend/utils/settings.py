@@ -13,28 +13,35 @@ class Settings(BaseSettings):
 
     # Gemini LangChain
     API_KEY: str
-    PROJECT_ID: str
+    # PROJECT_ID: str
     GEMINI_MODEL: str
     MAX_TOKENS: int
     MAX_TOKENS_SUMMARY: int
     LLM_TEMPERATURE: int
 
     # Chat History
-    MAX_HISTORY_MESSAGES: int = 5
+    MAX_HISTORY_MESSAGES: int
 
     # RAG Configuration
-    EMBEDDING_MODEL: str = "models/text-embedding-004"
+    EMBEDDING_MODEL: str = "models/gemini-embedding-001"
     CHUNK_SIZE: int = 1200
     CHUNK_OVERLAP: int = 200
-    RAG_TOP_K: int = 1  # Changed from 3 to 1 for faster responses
     MAX_FILE_SIZE_MB: int = 10
-    ENABLE_RAG: bool = True
-    BM25_WEIGHT: float = 0.3  # Keep for compatibility (not used in semantic-only)
-    SEMANTIC_WEIGHT: float = 0.7  # Keep for compatibility (not used in semantic-only)
 
     DATABASE_URL: str
+    REDIS_URL: str = "redis://localhost:6379"
 
-    LOG_LEVEL: str
+    # LOG_LEVEL: str
+
+    # WhatsApp Configuration (optional - set in .env to enable)
+    WHATSAPP_ACCESS_TOKEN: str
+    WHATSAPP_PHONE_NUMBER_ID: str
+    WHATSAPP_VERIFY_TOKEN: str
+    WHATSAPP_APP_SECRET: str
+    WHATSAPP_API_VERSION: str
+
+    ALLOWED_FILE_TYPES: list[str] = ["application/pdf", "text/plain"]
+    MAX_FILES_PER_UPLOAD: int = 5
 
 
 settings = Settings()  # type: ignore

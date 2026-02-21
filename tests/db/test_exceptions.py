@@ -1,14 +1,21 @@
-"""Tests for database exceptions."""
+"""Tests for exception models."""
 
 import os
 import unittest
 
-from delpro_backend.db.exceptions import DocumentProcessingError, ResourceNotFoundError
+from delpro_backend.models.v1.exception_models import (
+    DocumentProcessingError,
+    DuplicatedWhatsappRequestError,
+    InvalidRequestError,
+    InvalidWhatsappMessageError,
+    MissingParametersRequestError,
+    ResourceNotFoundError,
+    WebhookValidationError,
+)
 from tests.keys_test import DEFAULT_KEYS
 
 for key, value in DEFAULT_KEYS.items():
     os.environ.setdefault(key, value)
-os.environ.setdefault("MAX_TOKENS_SUMMARY", "500")
 
 
 class TestResourceNotFoundError(unittest.TestCase):
@@ -47,3 +54,32 @@ class TestDocumentProcessingError(unittest.TestCase):
         self.assertIn("doc-abc", str(error))
         self.assertIn("Invalid format", str(error))
         self.assertIn("Failed to process", str(error))
+
+
+class TestOtherExceptions(unittest.TestCase):
+    """Tests for remaining exception classes."""
+
+    def test_webhook_validation_error_is_exception(self):
+        """Test WebhookValidationError is an Exception."""
+        err = WebhookValidationError("bad webhook")
+        self.assertIsInstance(err, Exception)
+
+    def test_invalid_whatsapp_message_error(self):
+        """Test InvalidWhatsappMessageError is an Exception."""
+        err = InvalidWhatsappMessageError()
+        self.assertIsInstance(err, Exception)
+
+    def test_duplicated_whatsapp_request_error(self):
+        """Test DuplicatedWhatsappRequestError is an Exception."""
+        err = DuplicatedWhatsappRequestError()
+        self.assertIsInstance(err, Exception)
+
+    def test_missing_parameters_request_error(self):
+        """Test MissingParametersRequestError is an Exception."""
+        err = MissingParametersRequestError()
+        self.assertIsInstance(err, Exception)
+
+    def test_invalid_request_error(self):
+        """Test InvalidRequestError is an Exception."""
+        err = InvalidRequestError("bad request")
+        self.assertIsInstance(err, Exception)

@@ -1,0 +1,40 @@
+@BaseUrl = {{$dotenv BASE_URL}}
+
+@phone-id=
+@test-message = me envie uma foto da piscina do free
+
+### Send a test WhatsApp message (no signature required)
+POST {{BaseUrl}}/test
+Content-Type: application/json
+
+{
+  "object": "message",
+  "entry": [
+    {
+        "id": "test_id",
+        "changes": [
+          {
+              "value": {
+                "contacts": [
+                    {
+                      "profile": {
+                          "name": "Test User"
+                      },
+                      "sender_phone_number": "{{phone-id}}"
+                    }
+                ],
+                "messages": [
+                    {
+                      "text": {
+                          "body": "{{test-message}}",
+                          "id": "123"
+                      },
+                      "id": "123"
+                    }
+                ]
+              }
+          }
+        ]
+    }
+  ]
+}

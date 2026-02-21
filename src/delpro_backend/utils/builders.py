@@ -2,7 +2,7 @@
 
 import threading
 
-from langchain_google_genai import ChatGoogleGenerativeAI
+from langchain_google_genai import ChatGoogleGenerativeAI, GoogleGenerativeAIEmbeddings
 
 from delpro_backend.utils.settings import settings
 
@@ -10,6 +10,8 @@ _llm: ChatGoogleGenerativeAI | None = None
 _summary_llm: ChatGoogleGenerativeAI | None = None
 _lock = threading.Lock()
 _summary_lock = threading.Lock()
+_embeddings: GoogleGenerativeAIEmbeddings | None = None
+_embeddings_lock = threading.Lock()
 
 
 def get_llm() -> ChatGoogleGenerativeAI:
@@ -54,3 +56,22 @@ def get_summary_llm() -> ChatGoogleGenerativeAI:
                 )
 
     return _summary_llm
+
+
+def get_embeddings() -> GoogleGenerativeAIEmbeddings:
+    """Return the singleton embeddings model instance.
+
+    Returns:
+        The configured embeddings model.
+    """
+    global _embeddings
+
+    if _embeddings is None:
+        with _embeddings_lock:
+            if _embeddings is None:
+                _embeddings = GoogleGenerativeAIEmbeddings(
+                    model=settings.EMBEDDING_MODEL,
+                    api_key=settings.API_KEY,  # type:ignore
+                )
+
+    return _embeddings

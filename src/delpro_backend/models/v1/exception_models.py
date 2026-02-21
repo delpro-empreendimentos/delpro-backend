@@ -1,4 +1,4 @@
-"""Database-specific exceptions."""
+"""Class to store all application exceptions."""
 
 
 class ResourceNotFoundError(Exception):
@@ -29,3 +29,36 @@ class DocumentProcessingError(Exception):
         self.document_id = document_id
         self.reason = reason
         super().__init__(f"Failed to process document '{document_id}': {reason}")
+
+
+class WebhookValidationError(Exception):
+    """Error while valitaing webhook."""
+
+    pass
+
+
+class InvalidWhatsappMessageError(Exception):
+    """Invalid whatsapp message error."""
+
+    pass
+
+
+class DuplicatedWhatsappRequestError(Exception):
+    """Duplicated whatsapp request."""
+
+    pass
+
+
+# Request Errors
+
+
+class MissingParametersRequestError(Exception):
+    """Raised when the request does not contain all parameters needded."""
+
+    pass
+
+
+class InvalidRequestError(Exception):
+    """Raised when a request is invalid."""
+
+    pass
