@@ -2,7 +2,7 @@ DEFAULT_KEYS = {
     "DATABASE_URL": "postgresql+asyncpg://test:test@localhost:5432/test_db",
     "API_KEY": "test",
     "PROJECT_ID": "test",
-    "GEMINI_MODEL": "gemini-2.0-flash",
+    "GEMINI_MODEL": "gemini-2.5-flash",
     "MAX_TOKENS": "1024",
     "LLM_TEMPERATURE": "0",
     "MAX_HISTORY_MESSAGES": "20",

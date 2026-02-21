@@ -9,155 +9,90 @@ from tests.keys_test import DEFAULT_KEYS
 
 for key, value in DEFAULT_KEYS.items():
     os.environ.setdefault(key, value)
-os.environ.setdefault("MAX_TOKENS_SUMMARY", "500")
+
+
+def _make_service():
+    mock_embeddings = AsyncMock()
+    mock_embeddings.aembed_documents = AsyncMock(return_value=[[0.1, 0.2, 0.3]])
+    return VectorService(embeddings=mock_embeddings), mock_embeddings
 
 
 class TestVectorServiceSaveChunksWithEmbeddings(unittest.IsolatedAsyncioTestCase):
     """Tests for VectorService.save_chunks_with_embeddings."""
 
-    @patch("delpro_backend.db.vector_service.get_embeddings")
-    @patch("delpro_backend.db.vector_service.AsyncSessionFactory")
-    async def test_save_chunks_generates_embeddings(self, mock_factory, mock_get_embeddings):
-        """Test that embeddings are generated for all chunks."""
+    @patch("delpro_backend.services.vector_service.AsyncSessionFactory")
+    async def test_save_chunks_returns_count(self, mock_factory):
+        """Test that save_chunks returns the number of chunks saved."""
+        svc, mock_emb = _make_service()
+        mock_emb.aembed_documents.return_value = [[0.1] * 3, [0.2] * 3]
+
         mock_session = AsyncMock()
         mock_factory.return_value.__aenter__.return_value = mock_session
 
-        mock_embeddings_model = AsyncMock()
-        mock_embeddings_model.aembed_documents.return_value = [
-            [0.1, 0.2, 0.3],
-            [0.4, 0.5, 0.6],
-        ]
-        mock_get_embeddings.return_value = mock_embeddings_model
-
         chunks = [
-            {"content": "Chunk 1 content", "chunk_index": 0, "metadata": {"position": 0}},
-            {"content": "Chunk 2 content", "chunk_index": 1, "metadata": {"position": 1}},
+            {"content": "Chunk 1", "chunk_index": 0, "metadata": {"position": 0}},
+            {"content": "Chunk 2", "chunk_index": 1, "metadata": {"position": 1}},
         ]
 
-        result = await VectorService.save_chunks_with_embeddings("doc-123", chunks)
+        result = await svc.save_chunks_with_embeddings("doc-123", chunks)
 
         self.assertEqual(result, 2)
-        mock_embeddings_model.aembed_documents.assert_called_once_with(
-            ["Chunk 1 content", "Chunk 2 content"]
-        )
+        mock_emb.aembed_documents.assert_awaited_once_with(["Chunk 1", "Chunk 2"])
 
-    @patch("delpro_backend.db.vector_service.get_embeddings")
-    @patch("delpro_backend.db.vector_service.AsyncSessionFactory")
-    async def test_save_chunks_uses_bulk_insert(self, mock_factory, mock_get_embeddings):
-        """Test that chunks are inserted using bulk insert."""
+    @patch("delpro_backend.services.vector_service.AsyncSessionFactory")
+    async def test_save_chunks_uses_bulk_insert(self, mock_factory):
+        """Test that chunks are inserted using bulk execute."""
+        svc, _ = _make_service()
+
         mock_session = AsyncMock()
         mock_factory.return_value.__aenter__.return_value = mock_session
 
-        mock_embeddings_model = AsyncMock()
-        mock_embeddings_model.aembed_documents.return_value = [[0.1, 0.2, 0.3]]
-        mock_get_embeddings.return_value = mock_embeddings_model
+        chunks = [{"content": "Test content", "chunk_index": 0, "metadata": {}}]
 
-        chunks = [
-            {"content": "Test content", "chunk_index": 0, "metadata": {}},
-        ]
+        await svc.save_chunks_with_embeddings("doc-123", chunks)
 
-        await VectorService.save_chunks_with_embeddings("doc-123", chunks)
-
-        # Verify execute was called (bulk insert) instead of add
         mock_session.execute.assert_called_once()
         mock_session.commit.assert_awaited_once()
-
-    @patch("delpro_backend.db.vector_service.get_embeddings")
-    @patch("delpro_backend.db.vector_service.AsyncSessionFactory")
-    async def test_save_chunks_returns_count(self, mock_factory, mock_get_embeddings):
-        """Test that save_chunks returns the number of chunks saved."""
-        mock_session = AsyncMock()
-        mock_factory.return_value.__aenter__.return_value = mock_session
-
-        mock_embeddings_model = AsyncMock()
-        mock_embeddings_model.aembed_documents.return_value = [
-            [0.1] * 768,
-            [0.2] * 768,
-            [0.3] * 768,
-        ]
-        mock_get_embeddings.return_value = mock_embeddings_model
-
-        chunks = [{"content": f"Chunk {i}", "chunk_index": i, "metadata": {}} for i in range(3)]
-
-        result = await VectorService.save_chunks_with_embeddings("doc-456", chunks)
-
-        self.assertEqual(result, 3)
 
 
 class TestVectorServiceSemanticSearch(unittest.IsolatedAsyncioTestCase):
     """Tests for VectorService.semantic_search."""
 
-    @patch("delpro_backend.db.vector_service.AsyncSessionFactory")
-    async def test_semantic_search_returns_results(self, mock_factory):
-        """Test that semantic search returns ChunkRow and similarity tuples."""
+    @patch("delpro_backend.services.vector_service.AsyncSessionFactory")
+    async def test_semantic_search_returns_result(self, mock_factory):
+        """Test that semantic search returns a string result."""
+        svc, _ = _make_service()
+
         mock_session = AsyncMock()
+        mock_session.scalar.return_value = "Found chunk content"
         mock_factory.return_value.__aenter__.return_value = mock_session
 
-        # Mock chunk rows
-        mock_chunk1 = MagicMock()
-        mock_chunk1.content = "First chunk content"
-        mock_chunk2 = MagicMock()
-        mock_chunk2.content = "Second chunk content"
+        result = await svc.semantic_search([0.1] * 3072)
 
-        mock_result = MagicMock()
-        mock_result.all.return_value = [
-            (mock_chunk1, 0.95),
-            (mock_chunk2, 0.85),
-        ]
-        mock_session.execute.return_value = mock_result
+        self.assertEqual(result, "Found chunk content")
 
-        query_embedding = [0.1] * 768
-        results = await VectorService.semantic_search(query_embedding, top_k=2)
+    @patch("delpro_backend.services.vector_service.AsyncSessionFactory")
+    async def test_semantic_search_returns_none_when_empty(self, mock_factory):
+        """Test that semantic search returns None when no chunks exist."""
+        svc, _ = _make_service()
 
-        self.assertEqual(len(results), 2)
-        self.assertEqual(results[0][0].content, "First chunk content")
-        self.assertEqual(results[0][1], 0.95)
-        self.assertEqual(results[1][0].content, "Second chunk content")
-        self.assertEqual(results[1][1], 0.85)
-
-    @patch("delpro_backend.db.vector_service.AsyncSessionFactory")
-    async def test_semantic_search_respects_top_k(self, mock_factory):
-        """Test that semantic search respects the top_k parameter."""
         mock_session = AsyncMock()
+        mock_session.scalar.return_value = None
         mock_factory.return_value.__aenter__.return_value = mock_session
 
-        mock_result = MagicMock()
-        mock_result.all.return_value = []
-        mock_session.execute.return_value = mock_result
+        result = await svc.semantic_search([0.1] * 3072)
 
-        query_embedding = [0.1] * 768
-        await VectorService.semantic_search(query_embedding, top_k=5)
+        self.assertIsNone(result)
 
-        # Verify execute was called
-        mock_session.execute.assert_called_once()
+    @patch("delpro_backend.services.vector_service.AsyncSessionFactory")
+    async def test_semantic_search_calls_execute(self, mock_factory):
+        """Test that semantic_search executes the query."""
+        svc, _ = _make_service()
 
-    @patch("delpro_backend.db.vector_service.AsyncSessionFactory")
-    async def test_semantic_search_empty_results(self, mock_factory):
-        """Test that semantic search handles empty results."""
         mock_session = AsyncMock()
+        mock_session.scalar.return_value = None
         mock_factory.return_value.__aenter__.return_value = mock_session
 
-        mock_result = MagicMock()
-        mock_result.all.return_value = []
-        mock_session.execute.return_value = mock_result
+        await svc.semantic_search([0.5] * 3072)
 
-        query_embedding = [0.1] * 768
-        results = await VectorService.semantic_search(query_embedding, top_k=3)
-
-        self.assertEqual(results, [])
-
-    @patch("delpro_backend.db.vector_service.AsyncSessionFactory")
-    async def test_semantic_search_default_top_k(self, mock_factory):
-        """Test that semantic search uses default top_k of 3."""
-        mock_session = AsyncMock()
-        mock_factory.return_value.__aenter__.return_value = mock_session
-
-        mock_result = MagicMock()
-        mock_result.all.return_value = []
-        mock_session.execute.return_value = mock_result
-
-        query_embedding = [0.1] * 768
-        await VectorService.semantic_search(query_embedding)
-
-        # The default top_k is 3
-        mock_session.execute.assert_called_once()
+        mock_session.scalar.assert_called_once()

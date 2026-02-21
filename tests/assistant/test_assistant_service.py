@@ -9,10 +9,20 @@ from tests.keys_test import DEFAULT_KEYS
 for key, value in DEFAULT_KEYS.items():
     os.environ.setdefault(key, value)
 
-from langchain_core.messages import AIMessage, HumanMessage, SystemMessage  # noqa: E402
+from langchain_core.messages import AIMessage, HumanMessage, ToolMessage  # noqa: E402
 
 from delpro_backend.assistant.assistant_service import AssistantService  # noqa: E402
 from delpro_backend.db.chat_history_service import PostgresChatMessageHistory  # noqa: E402
+
+
+def _make_service():
+    """Create AssistantService with fully mocked dependencies."""
+    mock_llm = MagicMock()
+    mock_llm.bind_tools.return_value = MagicMock()
+    mock_rag = MagicMock()
+    mock_image = MagicMock()
+    with patch("delpro_backend.assistant.assistant_service.build_tools", return_value=[]):
+        return AssistantService(rag_service=mock_rag, llm=mock_llm, image_service=mock_image)
 
 
 class TestAssistantServiceGetSessionHistory(unittest.TestCase):
@@ -20,447 +30,239 @@ class TestAssistantServiceGetSessionHistory(unittest.TestCase):
 
     def test_returns_postgres_chat_message_history(self):
         """Test that _get_session_history returns the correct type."""
-        history = AssistantService._get_session_history("test-session")
+        svc = _make_service()
+        history = svc._get_session_history("test-session")
         self.assertIsInstance(history, PostgresChatMessageHistory)
 
     def test_uses_correct_session_id(self):
         """Test that the returned history has the correct session_id."""
-        history = AssistantService._get_session_history("my-session-123")
+        svc = _make_service()
+        history = svc._get_session_history("my-session-123")
         self.assertEqual(history._session_id, "my-session-123")
+
+
+class TestAssistantServiceExtractText(unittest.TestCase):
+    """Tests for _extract_text static method."""
+
+    def test_extracts_string_content(self):
+        """Test extraction from a response with string content."""
+        response = MagicMock()
+        response.content = "Hello world"
+        self.assertEqual(AssistantService._extract_text(response), "Hello world")
+
+    def test_extracts_list_dict_with_text_key(self):
+        """Test extraction from list of dicts with 'text' key."""
+        response = MagicMock()
+        response.content = [{"type": "text", "text": "Answer"}]
+        self.assertEqual(AssistantService._extract_text(response), "Answer")
+
+    def test_extracts_list_dict_without_text_key(self):
+        """Test extraction from list of dicts without 'text' key falls back to str."""
+        response = MagicMock()
+        response.content = [{"type": "image", "data": "base64"}]
+        result = AssistantService._extract_text(response)
+        self.assertIn("type", result)
+
+    def test_extracts_list_non_dict(self):
+        """Test extraction from list of non-dict items uses first item as str."""
+        response = MagicMock()
+        response.content = ["plain text", "second"]
+        self.assertEqual(AssistantService._extract_text(response), "plain text")
+
+    def test_extracts_empty_list(self):
+        """Test extraction from empty list falls back to str."""
+        response = MagicMock()
+        response.content = []
+        result = AssistantService._extract_text(response)
+        self.assertEqual(result, "[]")
+
+    def test_extracts_non_string_non_list_content(self):
+        """Test extraction from non-string, non-list content uses str()."""
+        response = MagicMock()
+        response.content = 12345
+        self.assertEqual(AssistantService._extract_text(response), "12345")
+
+    def test_fallback_when_no_content_attribute(self):
+        """Test fallback to str(response) when no content attribute."""
+        result = AssistantService._extract_text("plain string")
+        self.assertEqual(result, "plain string")
+
+
+class TestAssistantServiceExecuteTools(unittest.IsolatedAsyncioTestCase):
+    """Tests for _execute_tools."""
+
+    def _make_ai_message(self, tool_calls):
+        msg = MagicMock(spec=AIMessage)
+        msg.tool_calls = tool_calls
+        return msg
+
+    async def test_executes_known_tool(self):
+        """Test that a known tool is invoked and returns a ToolMessage."""
+        svc = _make_service()
+        mock_tool = AsyncMock()
+        mock_tool.ainvoke = AsyncMock(return_value="tool result")
+        svc._tools_by_name = {"my_tool": mock_tool}
+
+        tool_calls = [{"name": "my_tool", "args": {"q": "hello"}, "id": "call-1"}]
+        ai_msg = self._make_ai_message(tool_calls)
+
+        results = await svc._execute_tools(ai_msg)
+
+        self.assertEqual(len(results), 1)
+        self.assertIsInstance(results[0], ToolMessage)
+        self.assertEqual(results[0].content, "tool result")
+
+    async def test_unknown_tool_returns_error_message(self):
+        """Test that an unknown tool returns an error ToolMessage."""
+        svc = _make_service()
+        svc._tools_by_name = {}
+
+        tool_calls = [{"name": "ghost_tool", "args": {}, "id": "call-2"}]
+        ai_msg = self._make_ai_message(tool_calls)
+
+        results = await svc._execute_tools(ai_msg)
+
+        self.assertEqual(len(results), 1)
+        self.assertIn("ghost_tool", results[0].content)
+
+    async def test_tool_exception_returns_error_message(self):
+        """Test that a tool that raises an exception returns an error ToolMessage."""
+        svc = _make_service()
+        mock_tool = AsyncMock()
+        mock_tool.ainvoke = AsyncMock(side_effect=RuntimeError("boom"))
+        svc._tools_by_name = {"fail_tool": mock_tool}
+
+        tool_calls = [{"name": "fail_tool", "args": {}, "id": "call-3"}]
+        ai_msg = self._make_ai_message(tool_calls)
+
+        results = await svc._execute_tools(ai_msg)
+
+        self.assertEqual(len(results), 1)
+        self.assertIn("fail_tool", results[0].content)
+
+    async def test_multiple_tools_parallel(self):
+        """Test that multiple tools are executed and all return ToolMessages."""
+        svc = _make_service()
+        tool_a = AsyncMock()
+        tool_a.ainvoke = AsyncMock(return_value="result_a")
+        tool_b = AsyncMock()
+        tool_b.ainvoke = AsyncMock(return_value="result_b")
+        svc._tools_by_name = {"tool_a": tool_a, "tool_b": tool_b}
+
+        tool_calls = [
+            {"name": "tool_a", "args": {}, "id": "id-a"},
+            {"name": "tool_b", "args": {}, "id": "id-b"},
+        ]
+        ai_msg = self._make_ai_message(tool_calls)
+
+        results = await svc._execute_tools(ai_msg)
+
+        self.assertEqual(len(results), 2)
+        contents = {r.content for r in results}
+        self.assertIn("result_a", contents)
+        self.assertIn("result_b", contents)
 
 
 class TestAssistantServiceChat(unittest.IsolatedAsyncioTestCase):
     """Tests for AssistantService.chat."""
 
-    def setUp(self):
-        """Reset the cached chain before each test."""
-        AssistantService._chain_with_history = None
+    def _make_service_with_mocks(self):
+        """Return (svc, mock_llm_with_tools, mock_history_store)."""
+        svc = _make_service()
 
-    @patch("delpro_backend.assistant.assistant_service.RAGService")
-    @patch("delpro_backend.assistant.assistant_service.PostgresChatMessageHistory")
-    @patch("delpro_backend.assistant.assistant_service.build_chat_prompt")
-    @patch("delpro_backend.assistant.assistant_service.get_llm")
-    async def test_chat_returns_response_content(
-        self, mock_get_llm, mock_build_prompt, mock_history_class, mock_rag_service
-    ):
-        """Test that chat returns the content string from the LLM response."""
-        # Mock RAG service
-        mock_rag_service.retrieve_context = AsyncMock(
-            return_value={"context": "", "sources": [], "chunk_count": 0}
+        mock_history = AsyncMock(spec=PostgresChatMessageHistory)
+        mock_history.aget_messages = AsyncMock(return_value=[])
+        mock_history.aadd_messages = AsyncMock()
+
+        mock_prompt_value = MagicMock()
+        mock_prompt_value.to_messages.return_value = [HumanMessage(content="hi")]
+
+        svc._get_session_history = MagicMock(return_value=mock_history)
+        svc._prompt_template = AsyncMock()
+        svc._prompt_template.ainvoke = AsyncMock(return_value=mock_prompt_value)
+
+        return svc, svc._llm_with_tools, mock_history
+
+    async def test_chat_no_tool_calls_returns_text(self):
+        """When LLM returns no tool_calls, extract text and save history."""
+        svc, mock_llm_with_tools, mock_history = self._make_service_with_mocks()
+
+        ai_response = MagicMock(spec=AIMessage)
+        ai_response.content = "Hello!"
+        ai_response.tool_calls = []
+        mock_llm_with_tools.ainvoke = AsyncMock(return_value=ai_response)
+
+        result = await svc.chat(
+            sender_phone_number="5511999",
+            user_message="Hi",
+            user_name="Alice",
         )
 
-        # Mock history (empty)
-        mock_history = AsyncMock()
-        mock_history.aget_messages.return_value = []
-        mock_history_class.return_value = mock_history
+        self.assertEqual(result, "Hello!")
+        mock_history.aadd_messages.assert_awaited_once()
 
-        mock_llm = MagicMock()
-        mock_get_llm.return_value = mock_llm
+    async def test_chat_with_tool_calls_does_round2(self):
+        """When LLM returns tool_calls, execute tools then call LLM again."""
+        svc, mock_llm_with_tools, mock_history = self._make_service_with_mocks()
 
-        mock_prompt = MagicMock()
-        mock_build_prompt.return_value = mock_prompt
+        ai_round1 = MagicMock(spec=AIMessage)
+        ai_round1.content = ""
+        ai_round1.tool_calls = [{"name": "my_tool", "args": {}, "id": "c1"}]
 
-        mock_chain = AsyncMock()
-        mock_chain.ainvoke.return_value = AIMessage(content="Hello! How can I help?")
-        mock_prompt.__or__ = MagicMock(return_value=mock_chain)
+        ai_round2 = MagicMock(spec=AIMessage)
+        ai_round2.content = "Final answer"
+        ai_round2.tool_calls = []
 
-        with patch(
-            "delpro_backend.assistant.assistant_service.RunnableWithMessageHistory",
-        ) as mock_rwmh:
-            mock_rwmh_instance = AsyncMock()
-            mock_rwmh_instance.ainvoke.return_value = AIMessage(content="Hello! How can I help?")
-            mock_rwmh.return_value = mock_rwmh_instance
+        mock_llm_with_tools.ainvoke = AsyncMock(side_effect=[ai_round1, ai_round2])
 
-            result = await AssistantService.chat("session-1", "Hi there", "John Doe")
+        mock_tool = AsyncMock()
+        mock_tool.ainvoke = AsyncMock(return_value="tool result")
+        svc._tools_by_name = {"my_tool": mock_tool}
 
-        self.assertEqual(result, "Hello! How can I help?")
-
-    @patch("delpro_backend.assistant.assistant_service.RAGService")
-    @patch("delpro_backend.assistant.assistant_service.PostgresChatMessageHistory")
-    @patch("delpro_backend.assistant.assistant_service.build_chat_prompt")
-    @patch("delpro_backend.assistant.assistant_service.get_llm")
-    async def test_chat_passes_correct_config(
-        self, mock_get_llm, mock_build_prompt, mock_history_class, mock_rag_service
-    ):
-        """Test that chat passes the correct session_id and context_info in config."""
-        # Mock RAG service
-        mock_rag_service.retrieve_context = AsyncMock(
-            return_value={"context": "", "sources": [], "chunk_count": 0}
+        result = await svc.chat(
+            sender_phone_number="5511999",
+            user_message="Send me something",
+            user_name="Bob",
         )
 
-        # Mock history (empty)
-        mock_history = AsyncMock()
-        mock_history.aget_messages.return_value = []
-        mock_history_class.return_value = mock_history
+        self.assertEqual(result, "Final answer")
+        self.assertEqual(mock_llm_with_tools.ainvoke.await_count, 2)
+        mock_history.aadd_messages.assert_awaited_once()
 
-        mock_llm = MagicMock()
-        mock_get_llm.return_value = mock_llm
+    async def test_chat_saves_human_and_ai_messages(self):
+        """Verify that both HumanMessage and AIMessage are saved after no-tool response."""
+        svc, mock_llm_with_tools, mock_history = self._make_service_with_mocks()
 
-        mock_prompt = MagicMock()
-        mock_build_prompt.return_value = mock_prompt
-        mock_prompt.__or__ = MagicMock(return_value=MagicMock())
+        ai_response = MagicMock(spec=AIMessage)
+        ai_response.content = "My answer"
+        ai_response.tool_calls = []
+        mock_llm_with_tools.ainvoke = AsyncMock(return_value=ai_response)
 
-        with patch(
-            "delpro_backend.assistant.assistant_service.RunnableWithMessageHistory",
-        ) as mock_rwmh:
-            mock_rwmh_instance = AsyncMock()
-            mock_rwmh_instance.ainvoke.return_value = AIMessage(content="response")
-            mock_rwmh.return_value = mock_rwmh_instance
-
-            await AssistantService.chat("session-42", "test message", "Alice")
-
-            # Verify that ainvoke was called with input and context_info
-            call_args = mock_rwmh_instance.ainvoke.call_args
-            self.assertIn("input", call_args[0][0])
-            self.assertIn("context_info", call_args[0][0])
-            self.assertEqual(call_args[0][0]["input"], "test message")
-            self.assertIn("Corretor: Alice", call_args[0][0]["context_info"])
-
-    @patch("delpro_backend.assistant.assistant_service.RAGService")
-    @patch("delpro_backend.assistant.assistant_service.PostgresChatMessageHistory")
-    @patch("delpro_backend.assistant.assistant_service.build_chat_prompt")
-    @patch("delpro_backend.assistant.assistant_service.get_llm")
-    async def test_chat_handles_string_response(
-        self, mock_get_llm, mock_build_prompt, mock_history_class, mock_rag_service
-    ):
-        """Test that chat handles a plain string response."""
-        # Mock RAG service
-        mock_rag_service.retrieve_context = AsyncMock(
-            return_value={"context": "", "sources": [], "chunk_count": 0}
+        await svc.chat(
+            sender_phone_number="123",
+            user_message="Question",
+            user_name="Carlos",
         )
 
-        # Mock history (empty)
-        mock_history = AsyncMock()
-        mock_history.aget_messages.return_value = []
-        mock_history_class.return_value = mock_history
+        saved = mock_history.aadd_messages.call_args[0][0]
+        roles = [type(m).__name__ for m in saved]
+        self.assertIn("HumanMessage", roles)
+        self.assertIn("AIMessage", roles)
 
-        mock_llm = MagicMock()
-        mock_get_llm.return_value = mock_llm
+    async def test_chat_with_existing_history(self):
+        """Chat should load and pass existing history to the prompt."""
+        svc, mock_llm_with_tools, mock_history = self._make_service_with_mocks()
 
-        mock_prompt = MagicMock()
-        mock_build_prompt.return_value = mock_prompt
-        mock_prompt.__or__ = MagicMock(return_value=MagicMock())
+        existing = [HumanMessage(content="old"), AIMessage(content="old reply")]
+        mock_history.aget_messages = AsyncMock(return_value=existing)
 
-        with patch(
-            "delpro_backend.assistant.assistant_service.RunnableWithMessageHistory",
-        ) as mock_rwmh:
-            mock_rwmh_instance = AsyncMock()
-            mock_rwmh_instance.ainvoke.return_value = "plain string"
-            mock_rwmh.return_value = mock_rwmh_instance
+        ai_response = MagicMock(spec=AIMessage)
+        ai_response.content = "New answer"
+        ai_response.tool_calls = []
+        mock_llm_with_tools.ainvoke = AsyncMock(return_value=ai_response)
 
-            result = await AssistantService.chat("session-1", "hello", "Bob")
+        result = await svc.chat("999", "New question", "Dave")
 
-        self.assertEqual(result, "plain string")
-
-    @patch("delpro_backend.assistant.assistant_service.RAGService")
-    @patch("delpro_backend.assistant.assistant_service.PostgresChatMessageHistory")
-    @patch("delpro_backend.assistant.assistant_service.build_chat_prompt")
-    @patch("delpro_backend.assistant.assistant_service.get_llm")
-    async def test_chat_includes_context_summary(
-        self, mock_get_llm, mock_build_prompt, mock_history_class, mock_rag_service
-    ):
-        """Test that context summary from SystemMessage is included in context_info."""
-        # Mock RAG service
-        mock_rag_service.retrieve_context = AsyncMock(
-            return_value={"context": "", "sources": [], "chunk_count": 0}
-        )
-
-        # Mock history with SystemMessage (summary)
-        mock_history = AsyncMock()
-        mock_history.aget_messages.return_value = [
-            HumanMessage(content="Mensagem antiga"),
-            AIMessage(content="Resposta antiga"),
-            SystemMessage(content="Resumo: Cliente interessado em apartamento 2 quartos"),
-        ]
-        mock_history_class.return_value = mock_history
-
-        mock_llm = MagicMock()
-        mock_get_llm.return_value = mock_llm
-
-        mock_prompt = MagicMock()
-        mock_build_prompt.return_value = mock_prompt
-        mock_prompt.__or__ = MagicMock(return_value=MagicMock())
-
-        with patch(
-            "delpro_backend.assistant.assistant_service.RunnableWithMessageHistory",
-        ) as mock_rwmh:
-            mock_rwmh_instance = AsyncMock()
-            mock_rwmh_instance.ainvoke.return_value = AIMessage(content="Resposta")
-            mock_rwmh.return_value = mock_rwmh_instance
-
-            await AssistantService.chat("test", "Ola", "Joao")
-
-            # Verify context_info includes summary
-            call_args = mock_rwmh_instance.ainvoke.call_args
-            context_info = call_args[0][0]["context_info"]
-            self.assertIn("Contexto anterior", context_info)
-            self.assertIn("apartamento 2 quartos", context_info)
-
-    @patch("delpro_backend.assistant.assistant_service.RAGService")
-    @patch("delpro_backend.assistant.assistant_service.PostgresChatMessageHistory")
-    @patch("delpro_backend.assistant.assistant_service.build_chat_prompt")
-    @patch("delpro_backend.assistant.assistant_service.get_llm")
-    async def test_chat_handles_list_with_non_dict_items(
-        self, mock_get_llm, mock_build_prompt, mock_history_class, mock_rag_service
-    ):
-        """Test chat handles response with list containing non-dict items."""
-        # Mock RAG service
-        mock_rag_service.retrieve_context = AsyncMock(
-            return_value={"context": "", "sources": [], "chunk_count": 0}
-        )
-
-        # Mock history (empty)
-        mock_history = AsyncMock()
-        mock_history.aget_messages.return_value = []
-        mock_history_class.return_value = mock_history
-
-        mock_llm = MagicMock()
-        mock_get_llm.return_value = mock_llm
-
-        mock_prompt = MagicMock()
-        mock_build_prompt.return_value = mock_prompt
-        mock_prompt.__or__ = MagicMock(return_value=MagicMock())
-
-        with patch(
-            "delpro_backend.assistant.assistant_service.RunnableWithMessageHistory",
-        ) as mock_rwmh:
-            mock_rwmh_instance = AsyncMock()
-            # Response with list of non-dict items (strings)
-            mock_response = MagicMock()
-            mock_response.content = ["text item", "another item"]
-            mock_rwmh_instance.ainvoke.return_value = mock_response
-            mock_rwmh.return_value = mock_rwmh_instance
-
-            result = await AssistantService.chat("session-1", "hello", "Bob")
-
-        self.assertEqual(result, "text item")
-
-    @patch("delpro_backend.assistant.assistant_service.RAGService")
-    @patch("delpro_backend.assistant.assistant_service.PostgresChatMessageHistory")
-    @patch("delpro_backend.assistant.assistant_service.build_chat_prompt")
-    @patch("delpro_backend.assistant.assistant_service.get_llm")
-    async def test_chat_handles_non_string_non_list_content(
-        self, mock_get_llm, mock_build_prompt, mock_history_class, mock_rag_service
-    ):
-        """Test chat handles response with content that is neither string nor list."""
-        # Mock RAG service
-        mock_rag_service.retrieve_context = AsyncMock(
-            return_value={"context": "", "sources": [], "chunk_count": 0}
-        )
-
-        # Mock history (empty)
-        mock_history = AsyncMock()
-        mock_history.aget_messages.return_value = []
-        mock_history_class.return_value = mock_history
-
-        mock_llm = MagicMock()
-        mock_get_llm.return_value = mock_llm
-
-        mock_prompt = MagicMock()
-        mock_build_prompt.return_value = mock_prompt
-        mock_prompt.__or__ = MagicMock(return_value=MagicMock())
-
-        with patch(
-            "delpro_backend.assistant.assistant_service.RunnableWithMessageHistory",
-        ) as mock_rwmh:
-            mock_rwmh_instance = AsyncMock()
-            # Response with non-string, non-list content (e.g., int)
-            mock_response = MagicMock()
-            mock_response.content = 12345
-            mock_rwmh_instance.ainvoke.return_value = mock_response
-            mock_rwmh.return_value = mock_rwmh_instance
-
-            result = await AssistantService.chat("session-1", "hello", "Bob")
-
-        self.assertEqual(result, "12345")
-
-    @patch("delpro_backend.assistant.assistant_service.RAGService")
-    @patch("delpro_backend.assistant.assistant_service.PostgresChatMessageHistory")
-    @patch("delpro_backend.assistant.assistant_service.build_chat_prompt")
-    @patch("delpro_backend.assistant.assistant_service.get_llm")
-    async def test_chat_handles_dict_without_text_key(
-        self, mock_get_llm, mock_build_prompt, mock_history_class, mock_rag_service
-    ):
-        """Test chat handles response with dict that doesn't have a 'text' key."""
-        # Mock RAG service
-        mock_rag_service.retrieve_context = AsyncMock(
-            return_value={"context": "", "sources": [], "chunk_count": 0}
-        )
-
-        # Mock history (empty)
-        mock_history = AsyncMock()
-        mock_history.aget_messages.return_value = []
-        mock_history_class.return_value = mock_history
-
-        mock_llm = MagicMock()
-        mock_get_llm.return_value = mock_llm
-
-        mock_prompt = MagicMock()
-        mock_build_prompt.return_value = mock_prompt
-        mock_prompt.__or__ = MagicMock(return_value=MagicMock())
-
-        with patch(
-            "delpro_backend.assistant.assistant_service.RunnableWithMessageHistory",
-        ) as mock_rwmh:
-            mock_rwmh_instance = AsyncMock()
-            # Response with dict list but no "text" key - should use fallback
-            mock_response = MagicMock()
-            mock_response.content = [{"type": "image", "data": "base64data"}]
-            mock_rwmh_instance.ainvoke.return_value = mock_response
-            mock_rwmh.return_value = mock_rwmh_instance
-
-            result = await AssistantService.chat("session-1", "hello", "Bob")
-
-        # Should use the fallback str(content)
-        self.assertIn("type", result)
-        self.assertIn("image", result)
-
-    @patch("delpro_backend.assistant.assistant_service.RAGService")
-    @patch("delpro_backend.assistant.assistant_service.PostgresChatMessageHistory")
-    @patch("delpro_backend.assistant.assistant_service.build_chat_prompt")
-    @patch("delpro_backend.assistant.assistant_service.get_llm")
-    async def test_chat_finds_system_message_in_history(
-        self, mock_get_llm, mock_build_prompt, mock_history_class, mock_rag_service
-    ):
-        """Test that chat iterates through history to find SystemMessage."""
-        # Mock RAG service
-        mock_rag_service.retrieve_context = AsyncMock(
-            return_value={"context": "", "sources": [], "chunk_count": 0}
-        )
-
-        # Mock history with multiple messages, SystemMessage not at the end
-        mock_history = AsyncMock()
-        mock_history.aget_messages.return_value = [
-            HumanMessage(content="Old question 1"),
-            AIMessage(content="Old response 1"),
-            SystemMessage(content="Summary of old conversation"),
-            HumanMessage(content="Old question 2"),
-            AIMessage(content="Old response 2"),
-        ]
-        mock_history_class.return_value = mock_history
-
-        mock_llm = MagicMock()
-        mock_get_llm.return_value = mock_llm
-
-        mock_prompt = MagicMock()
-        mock_build_prompt.return_value = mock_prompt
-        mock_prompt.__or__ = MagicMock(return_value=MagicMock())
-
-        with patch(
-            "delpro_backend.assistant.assistant_service.RunnableWithMessageHistory",
-        ) as mock_rwmh:
-            mock_rwmh_instance = AsyncMock()
-            mock_rwmh_instance.ainvoke.return_value = AIMessage(content="Response")
-            mock_rwmh.return_value = mock_rwmh_instance
-
-            await AssistantService.chat("test", "New question", "Alice")
-
-            # Verify that context_info includes the summary
-            call_args = mock_rwmh_instance.ainvoke.call_args
-            context_info = call_args[0][0]["context_info"]
-            self.assertIn("Contexto anterior", context_info)
-            self.assertIn("Summary of old conversation", context_info)
-
-    @patch("delpro_backend.assistant.assistant_service.RAGService")
-    @patch("delpro_backend.assistant.assistant_service.PostgresChatMessageHistory")
-    @patch("delpro_backend.assistant.assistant_service.build_chat_prompt")
-    @patch("delpro_backend.assistant.assistant_service.get_llm")
-    async def test_chat_includes_rag_context(
-        self, mock_get_llm, mock_build_prompt, mock_history_class, mock_rag_service
-    ):
-        """Test that RAG context is included in the chain invocation."""
-        # Mock RAG service with context
-        mock_rag_service.retrieve_context = AsyncMock(
-            return_value={
-                "context": "Document content about apartments",
-                "sources": [],
-                "chunk_count": 1,
-            }
-        )
-
-        # Mock history (empty)
-        mock_history = AsyncMock()
-        mock_history.aget_messages.return_value = []
-        mock_history_class.return_value = mock_history
-
-        mock_llm = MagicMock()
-        mock_get_llm.return_value = mock_llm
-
-        mock_prompt = MagicMock()
-        mock_build_prompt.return_value = mock_prompt
-        mock_prompt.__or__ = MagicMock(return_value=MagicMock())
-
-        with patch(
-            "delpro_backend.assistant.assistant_service.RunnableWithMessageHistory",
-        ) as mock_rwmh:
-            mock_rwmh_instance = AsyncMock()
-            mock_rwmh_instance.ainvoke.return_value = AIMessage(content="Response")
-            mock_rwmh.return_value = mock_rwmh_instance
-
-            await AssistantService.chat("test", "Tell me about apartments", "Bob")
-
-            # Verify that rag_context was passed to ainvoke
-            call_args = mock_rwmh_instance.ainvoke.call_args
-            self.assertIn("rag_context", call_args[0][0])
-            self.assertEqual(call_args[0][0]["rag_context"], "Document content about apartments")
-
-    @patch("delpro_backend.assistant.assistant_service.RAGService")
-    @patch("delpro_backend.assistant.assistant_service.PostgresChatMessageHistory")
-    @patch("delpro_backend.assistant.assistant_service.build_chat_prompt")
-    @patch("delpro_backend.assistant.assistant_service.get_llm")
-    async def test_chat_calls_rag_with_correct_parameters(
-        self, mock_get_llm, mock_build_prompt, mock_history_class, mock_rag_service
-    ):
-        """Test that RAGService.retrieve_context is called with correct parameters."""
-        # Mock RAG service
-        mock_rag_service.retrieve_context = AsyncMock(
-            return_value={"context": "", "sources": [], "chunk_count": 0}
-        )
-
-        # Mock history (empty)
-        mock_history = AsyncMock()
-        mock_history.aget_messages.return_value = []
-        mock_history_class.return_value = mock_history
-
-        mock_llm = MagicMock()
-        mock_get_llm.return_value = mock_llm
-
-        mock_prompt = MagicMock()
-        mock_build_prompt.return_value = mock_prompt
-        mock_prompt.__or__ = MagicMock(return_value=MagicMock())
-
-        with patch(
-            "delpro_backend.assistant.assistant_service.RunnableWithMessageHistory",
-        ) as mock_rwmh:
-            mock_rwmh_instance = AsyncMock()
-            mock_rwmh_instance.ainvoke.return_value = AIMessage(content="Response")
-            mock_rwmh.return_value = mock_rwmh_instance
-
-            await AssistantService.chat("test", "User query here", "Alice")
-
-            # Verify RAGService was called with correct parameters
-            mock_rag_service.retrieve_context.assert_called_once_with("User query here", top_k=1)
-
-
-class TestAssistantServiceGetChain(unittest.TestCase):
-    """Tests for _get_chain caching."""
-
-    def setUp(self):
-        """Reset the cached chain before each test."""
-        AssistantService._chain_with_history = None
-
-    @patch("delpro_backend.assistant.assistant_service.build_chat_prompt")
-    @patch("delpro_backend.assistant.assistant_service.get_llm")
-    @patch("delpro_backend.assistant.assistant_service.RunnableWithMessageHistory")
-    def test_get_chain_caches(self, mock_rwmh, mock_get_llm, mock_build_prompt):
-        """Test that _get_chain returns the same instance on subsequent calls."""
-        mock_build_prompt.return_value = MagicMock()
-        mock_build_prompt.return_value.__or__ = MagicMock(return_value=MagicMock())
-        mock_get_llm.return_value = MagicMock()
-        mock_rwmh.return_value = MagicMock()
-
-        chain1 = AssistantService._get_chain()
-        chain2 = AssistantService._get_chain()
-
-        self.assertIs(chain1, chain2)
-        mock_rwmh.assert_called_once()
+        self.assertEqual(result, "New answer")
+        prompt_call = svc._prompt_template.ainvoke.call_args[0][0]
+        self.assertEqual(prompt_call["history"], existing)

@@ -4,34 +4,18 @@ import os
 import unittest
 from unittest.mock import AsyncMock, MagicMock, patch
 
-os.environ.update(
-    {
-        "DATABASE_URL": "postgresql+asyncpg://test:test@localhost:5432/test_db",
-        "API_KEY": "test",
-        "PROJECT_ID": "test",
-        "GEMINI_MODEL": "gemini-2.0-flash",
-        "MAX_TOKENS": "1024",
-        "LLM_TEMPERATURE": "0",
-        "MAX_HISTORY_MESSAGES": "20",
-        "LOG_LEVEL": "INFO",
-        "MAX_TOKENS_SUMMARY": "1",
-        "WHATSAPP_ACCESS_TOKEN": "test-token",
-        "WHATSAPP_PHONE_NUMBER_ID": "test-phone-id",
-        "WHATSAPP_VERIFY_TOKEN": "test-verify-token",
-        "WHATSAPP_APP_SECRET": "test-app-secret",
-        "WHATSAPP_API_VERSION": "v21.0",
-        "WHATSAPP_RECIPIENT_WAID": "test-recipient",
-    }
-)
+from tests.keys_test import DEFAULT_KEYS
 
-from delpro_backend.services.whatsapp_service import WhatsAppService
+for key, value in DEFAULT_KEYS.items():
+    os.environ.setdefault(key, value)
+
+from delpro_backend.services.whatsapp_service import WhatsAppService  # noqa: E402
 
 
-def _make_service(redis_client=None, assistant_service=None):
+def _make_service(assistant_service=None):
     """Create a WhatsAppService with mocked dependencies."""
     return WhatsAppService(
         assistant_service=assistant_service or AsyncMock(),
-        redis_client=redis_client or AsyncMock(),
     )
 
 
@@ -54,123 +38,52 @@ def _make_message_body(message_id="msg_123", phone="5511999999999", name="John",
     }
 
 
-class TestIsMessageProcessed(unittest.IsolatedAsyncioTestCase):
-    """Tests for the _is_message_processed method."""
+class TestIsValidWhatsappMessage(unittest.TestCase):
+    """Tests for is_valid_whatsapp_message."""
 
-    async def test_returns_false_for_new_message(self):
-        """Should return False when Redis SET NX succeeds (new message)."""
-        mock_redis = AsyncMock()
-        mock_redis.set.return_value = True  # NX succeeded = new key
+    def test_valid_message_returns_true(self):
+        """Test that a valid message body returns True."""
+        svc = _make_service()
+        body = _make_message_body()
+        self.assertTrue(svc.is_valid_whatsapp_message(body))
 
-        service = _make_service(redis_client=mock_redis)
-        result = await service._is_message_processed("msg_123")
+    def test_missing_object_returns_false(self):
+        """Test that a body without 'object' returns False."""
+        svc = _make_service()
+        body = _make_message_body()
+        body.pop("object")
+        self.assertFalse(svc.is_valid_whatsapp_message(body))
 
-        self.assertFalse(result)
-        mock_redis.set.assert_awaited_once_with("wpp:msg:msg_123", "1", nx=True, ex=300)
+    def test_missing_messages_returns_false(self):
+        """Test that a body without messages returns False."""
+        svc = _make_service()
+        body = {
+            "object": "whatsapp_business_account",
+            "entry": [{"changes": [{"value": {"contacts": []}}]}],
+        }
+        self.assertFalse(svc.is_valid_whatsapp_message(body))
 
-    async def test_returns_true_for_duplicate_message(self):
-        """Should return True when Redis SET NX fails (key already exists)."""
-        mock_redis = AsyncMock()
-        mock_redis.set.return_value = None  # NX failed = key exists
-
-        service = _make_service(redis_client=mock_redis)
-        result = await service._is_message_processed("msg_123")
-
-        self.assertTrue(result)
-
-    async def test_uses_correct_ttl(self):
-        """Should use the configured TTL for message expiry."""
-        mock_redis = AsyncMock()
-        mock_redis.set.return_value = True
-
-        service = _make_service(redis_client=mock_redis)
-        await service._is_message_processed("msg_456")
-
-        mock_redis.set.assert_awaited_once_with(
-            "wpp:msg:msg_456", "1", nx=True, ex=WhatsAppService._MESSAGE_TTL_SECONDS
-        )
+    def test_empty_body_returns_false(self):
+        """Test that an empty body returns False."""
+        svc = _make_service()
+        self.assertFalse(svc.is_valid_whatsapp_message({}))
 
 
-class TestSendMessage(unittest.IsolatedAsyncioTestCase):
-    """Tests for the _send_whatsapp_message method."""
+class TestExtractInformationWhatsappMessage(unittest.TestCase):
+    """Tests for extract_information_whatsapp_message."""
 
-    @patch("delpro_backend.services.whatsapp_service.httpx.AsyncClient")
-    async def test_sends_message_successfully(self, mock_client_class):
-        """Should send message via WhatsApp API."""
-        mock_response = MagicMock()
-        mock_response.status_code = 200
+    def test_extracts_wa_id(self):
+        """Test extraction uses wa_id when present."""
+        svc = _make_service()
+        body = _make_message_body(phone="5511111111111", name="Alice", text="Hello")
+        msg_id, text, phone, name = svc.extract_information_whatsapp_message(body)
+        self.assertEqual(phone, "5511111111111")
+        self.assertEqual(name, "Alice")
+        self.assertEqual(text, "Hello")
 
-        mock_client = AsyncMock()
-        mock_client.post.return_value = mock_response
-        mock_client_class.return_value.__aenter__.return_value = mock_client
-
-        service = _make_service()
-        await service._send_whatsapp_message("5511999999999", "Hello")
-
-        mock_client.post.assert_called_once()
-
-    @patch("delpro_backend.services.whatsapp_service.httpx.AsyncClient")
-    async def test_raises_on_timeout(self, mock_client_class):
-        """Should raise exception on timeout."""
-        import httpx
-
-        mock_client = AsyncMock()
-        mock_client.post.side_effect = httpx.TimeoutException("Timeout")
-        mock_client_class.return_value.__aenter__.return_value = mock_client
-
-        service = _make_service()
-        with self.assertRaises(httpx.TimeoutException):
-            await service._send_whatsapp_message("5511999999999", "Hello")
-
-    @patch("delpro_backend.services.whatsapp_service.httpx.AsyncClient")
-    async def test_raises_on_request_error(self, mock_client_class):
-        """Should raise exception on request error."""
-        import httpx
-
-        mock_client = AsyncMock()
-        mock_client.post.side_effect = httpx.RequestError("Connection failed")
-        mock_client_class.return_value.__aenter__.return_value = mock_client
-
-        service = _make_service()
-        with self.assertRaises(httpx.RequestError):
-            await service._send_whatsapp_message("5511999999999", "Hello")
-
-
-class TestHandleMessage(unittest.IsolatedAsyncioTestCase):
-    """Tests for the handle_message method."""
-
-    async def test_processes_new_message_with_wa_id(self):
-        """Should process a new message using wa_id and send response."""
-        mock_redis = AsyncMock()
-        mock_redis.set.return_value = True  # New message
-
-        mock_assistant = AsyncMock()
-        mock_assistant.chat.return_value = "Hello there!"
-
-        service = _make_service(redis_client=mock_redis, assistant_service=mock_assistant)
-
-        with patch.object(service, "_send_whatsapp_message", new_callable=AsyncMock) as mock_send:
-            body = _make_message_body()
-            result = await service.handle_message(body)
-
-            mock_assistant.chat.assert_called_once_with(
-                session_id="5511999999999",
-                user_message="Hi",
-                user_name="John",
-            )
-            mock_send.assert_awaited_once_with("5511999999999", "Hello there!")
-            self.assertEqual(result, "Hello there!")
-
-    async def test_processes_new_message_with_sender_phone_number(self):
-        """Should fallback to sender_phone_number if wa_id is not present."""
-        mock_redis = AsyncMock()
-        mock_redis.set.return_value = True
-
-        mock_assistant = AsyncMock()
-        mock_assistant.chat.return_value = "Hello there!"
-
-        service = _make_service(redis_client=mock_redis, assistant_service=mock_assistant)
-
+    def test_extracts_sender_phone_fallback(self):
+        """Test extraction falls back to sender_phone_number when wa_id is absent."""
+        svc = _make_service()
         body = {
             "object": "whatsapp_business_account",
             "entry": [
@@ -179,60 +92,109 @@ class TestHandleMessage(unittest.IsolatedAsyncioTestCase):
                         {
                             "value": {
                                 "contacts": [
-                                    {"sender_phone_number": "5511888888888", "profile": {"name": "Jane"}}
+                                    {"sender_phone_number": "5522222222222", "profile": {"name": "Bob"}}
                                 ],
-                                "messages": [{"id": "msg_456", "text": {"body": "Hello"}}],
+                                "messages": [{"id": "m1", "text": {"body": "Hi"}}],
                             }
                         }
                     ]
                 }
             ],
         }
+        msg_id, text, phone, name = svc.extract_information_whatsapp_message(body)
+        self.assertEqual(phone, "5522222222222")
+        self.assertEqual(name, "Bob")
 
-        with patch.object(service, "_send_whatsapp_message", new_callable=AsyncMock):
-            await service.handle_message(body)
 
-            mock_assistant.chat.assert_called_once_with(
-                session_id="5511888888888",
-                user_message="Hello",
-                user_name="Jane",
+class TestHandleMessage(unittest.IsolatedAsyncioTestCase):
+    """Tests for handle_message."""
+
+    async def test_returns_none_for_invalid_message(self):
+        """Test that None is returned for non-message webhooks."""
+        svc = _make_service()
+        body = {"entry": [{"changes": [{"value": {"statuses": [{"id": "x"}]}}]}]}
+        result = await svc.handle_message(body)
+        self.assertIsNone(result)
+
+    async def test_processes_valid_message_and_sends_reply(self):
+        """Test that a valid message is processed and reply is sent."""
+        mock_assistant = AsyncMock()
+        mock_assistant.chat = AsyncMock(return_value="Oi! Como posso ajudar?")
+
+        svc = _make_service(assistant_service=mock_assistant)
+
+        with patch("delpro_backend.services.whatsapp_service.send_message", new_callable=AsyncMock) as mock_send:
+            body = _make_message_body(phone="5511999", name="Carlos", text="Ola")
+            await svc.handle_message(body)
+
+            mock_assistant.chat.assert_awaited_once_with(
+                sender_phone_number="5511999",
+                user_message="Ola",
+                user_name="Carlos",
+            )
+            mock_send.assert_awaited_once_with(
+                to="5511999", text="Oi! Como posso ajudar?"
             )
 
-    async def test_skips_duplicate_message(self):
-        """Should skip processing if message was already processed."""
-        mock_redis = AsyncMock()
-        mock_redis.set.return_value = None  # Duplicate
-
+    async def test_handle_message_returns_response_for_test_number(self):
+        """Test that response text is returned for the test phone number '123'."""
         mock_assistant = AsyncMock()
-        service = _make_service(redis_client=mock_redis, assistant_service=mock_assistant)
+        mock_assistant.chat = AsyncMock(return_value="Test response")
 
-        body = _make_message_body()
-        result = await service.handle_message(body)
+        svc = _make_service(assistant_service=mock_assistant)
 
-        self.assertIsNone(result)
-        mock_assistant.chat.assert_not_called()
+        body = _make_message_body(phone="123", name="Tester", text="Test")
+        result = await svc.handle_message(body)
 
-    async def test_returns_none_for_status_update(self):
-        """Should return None for status update payloads."""
-        service = _make_service()
-
-        body = {
-            "entry": [
-                {
-                    "changes": [
-                        {
-                            "value": {
-                                "statuses": [{"id": "msg_123", "status": "delivered"}],
-                            }
-                        }
-                    ]
-                }
-            ]
-        }
-
-        result = await service.handle_message(body)
-        self.assertIsNone(result)
+        self.assertEqual(result, "Test response")
 
 
-if __name__ == "__main__":
-    unittest.main()
+class TestSignatureRequired(unittest.IsolatedAsyncioTestCase):
+    """Tests for signature_required."""
+
+    async def test_raises_403_on_bad_signature(self):
+        """Test that invalid signature raises HTTPException 403."""
+        import hashlib
+        import hmac
+        import json
+
+        from fastapi import HTTPException
+
+        svc = _make_service()
+
+        body_data = json.dumps({"test": "data"}).encode()
+
+        mock_request = MagicMock()
+        mock_request.headers = {"X-Hub-Signature-256": "sha256=invalidsignature"}
+        mock_request.body = AsyncMock(return_value=body_data)
+
+        with self.assertRaises(HTTPException) as ctx:
+            await svc.signature_required(mock_request)
+
+        self.assertEqual(ctx.exception.status_code, 403)
+
+    async def test_returns_body_on_valid_signature(self):
+        """Test that valid signature returns parsed body dict."""
+        import hashlib
+        import hmac
+        import json
+
+        from delpro_backend.utils.settings import settings
+
+        svc = _make_service()
+
+        body_data = {"hello": "world"}
+        payload = json.dumps(body_data).encode("utf-8")
+        expected_sig = hmac.new(
+            bytes(settings.WHATSAPP_APP_SECRET, "latin-1"),
+            msg=payload,
+            digestmod=hashlib.sha256,
+        ).hexdigest()
+
+        mock_request = MagicMock()
+        mock_request.headers = {"X-Hub-Signature-256": f"sha256={expected_sig}"}
+        mock_request.body = AsyncMock(return_value=payload)
+
+        result = await svc.signature_required(mock_request)
+
+        self.assertEqual(result, body_data)
