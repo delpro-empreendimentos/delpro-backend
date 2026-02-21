@@ -22,6 +22,26 @@ logger = get_logger(__name__)
 _ALLOWED_IMAGE_TYPES = {"image/jpeg", "image/png"}
 _MAX_IMAGE_SIZE_MB = 5
 
+_MAGIC_BYTES: list[tuple[bytes, str]] = [
+    (b"\xff\xd8\xff", "image/jpeg"),
+    (b"\x89PNG\r\n\x1a\n", "image/png"),
+]
+
+
+def _detect_mime_type(data: bytes) -> str | None:
+    """Detect MIME type from magic bytes.
+
+    Args:
+        data: Raw image bytes.
+
+    Returns:
+        MIME type string, or None if not recognised.
+    """
+    for magic, mime in _MAGIC_BYTES:
+        if data[: len(magic)] == magic:
+            return mime
+    return None
+
 
 class ImageService:
     """Service for image CRUD operations with semantic search."""
@@ -47,10 +67,6 @@ class ImageService:
         if not file:
             raise MissingParametersRequestError()
 
-        content_type = file.content_type or "application/octet-stream"
-        if content_type not in _ALLOWED_IMAGE_TYPES:
-            raise InvalidRequestError("Only JPEG and PNG images are accepted.")
-
         file_bytes = await file.read()
         file_size_mb = len(file_bytes) / (1024 * 1024)
 
@@ -58,6 +74,13 @@ class ImageService:
             raise InvalidRequestError(
                 f"Image too large ({file_size_mb:.2f} MB). Maximum: {_MAX_IMAGE_SIZE_MB} MB"
             )
+
+        # Detect real type from magic bytes — the client-declared Content-Type can be wrong
+        # (e.g. browser sends WebP bytes but declares image/jpeg).
+        actual_type = _detect_mime_type(file_bytes)
+        if actual_type is None or actual_type not in _ALLOWED_IMAGE_TYPES:
+            raise InvalidRequestError("Only JPEG and PNG images are accepted.")
+        content_type = actual_type
 
         embedding = await self._embeddings.aembed_query(description)
         image_id = str(uuid4())
@@ -188,7 +211,7 @@ class ImageService:
             description: Natural-language description of the desired image.
 
         Returns:
-            The best matching ImageRow, or None if no images with embeddings exist.
+            The best matching ImageRow with all fields loaded, or None if no images exist.
         """
         query_vec = await self._embeddings.aembed_query(description)
 
@@ -199,4 +222,9 @@ class ImageService:
                 .order_by(ImageRow.embedding.cosine_distance(query_vec))
                 .limit(1)
             )
-            return await session.scalar(stmt)
+            row = await session.scalar(stmt)
+            if row is not None:
+                # Force-load file_content while the session is still open,
+                # so the detached object has the bytes available after session close.
+                _ = row.file_content
+            return row
