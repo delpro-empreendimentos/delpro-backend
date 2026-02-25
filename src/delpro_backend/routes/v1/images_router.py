@@ -1,5 +1,7 @@
 """Router for image CRUD operations."""
 
+from urllib.parse import quote
+
 from fastapi import APIRouter, Form, Response, UploadFile, status
 from fastapi.responses import JSONResponse
 
@@ -105,7 +107,7 @@ async def get_image_content(image_id: str):
     return Response(
         content=file_bytes,
         media_type=content_type,
-        headers={"Content-Disposition": f'inline; filename="{filename}"'},
+        headers={"Content-Disposition": f"inline; filename*=UTF-8''{quote(filename)}"},
     )
 
 
@@ -122,6 +124,30 @@ async def update_image(image_id: str, data: UpdateImageRequest):
         Updated image metadata.
     """
     row = await image_service.update_image(image_id, data)
+
+    return GetImageResponse(
+        id=row.id,
+        filename=row.filename,
+        content_type=row.content_type,
+        file_size_bytes=row.file_size_bytes,
+        description=row.description,
+        created_at=row.created_at,
+    )
+
+
+@images_router.put("/{image_id}/content")
+@handle_errors
+async def replace_image_content(image_id: str, file: UploadFile):
+    """Replace the image file with a new upload.
+
+    Args:
+        image_id: The image UUID.
+        file: New image file.
+
+    Returns:
+        Updated image metadata.
+    """
+    row = await image_service.replace_image_content(image_id, file)
 
     return GetImageResponse(
         id=row.id,

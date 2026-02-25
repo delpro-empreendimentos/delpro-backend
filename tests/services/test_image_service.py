@@ -15,7 +15,7 @@ from delpro_backend.models.v1.exception_models import (  # noqa: E402
     ResourceNotFoundError,
 )
 from delpro_backend.models.v1.database_models import ImageRow  # noqa: E402
-from delpro_backend.services.image_service import ImageService, _detect_mime_type  # noqa: E402
+from delpro_backend.services.image_service import ImageService, _detect_mime_type, _is_webp  # noqa: E402
 
 JPEG_BYTES = b"\xff\xd8\xff" + b"x" * 100
 PNG_BYTES = b"\x89PNG\r\n\x1a\n" + b"x" * 100
@@ -42,6 +42,26 @@ class TestDetectMimeType(unittest.TestCase):
 
     def test_returns_none_for_unknown(self):
         self.assertIsNone(_detect_mime_type(b"unknown data"))
+
+
+class TestIsWebp(unittest.TestCase):
+    """Tests for _is_webp helper."""
+
+    def test_detects_webp(self):
+        self.assertTrue(_is_webp(WEBP_BYTES))
+
+    def test_returns_false_for_jpeg(self):
+        self.assertFalse(_is_webp(JPEG_BYTES))
+
+    def test_returns_false_for_png(self):
+        self.assertFalse(_is_webp(PNG_BYTES))
+
+    def test_returns_false_for_short_data(self):
+        self.assertFalse(_is_webp(b"RIFF"))
+
+    def test_returns_false_for_riff_non_webp(self):
+        # RIFF container but not WebP (e.g. WAV)
+        self.assertFalse(_is_webp(b"RIFF\x00\x00\x00\x00WAVE" + b"x" * 10))
 
 
 class TestImageServiceCreateImage(unittest.IsolatedAsyncioTestCase):
@@ -93,18 +113,25 @@ class TestImageServiceCreateImage(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(MissingParametersRequestError):
             await svc.create_image(None, "desc")
 
+    @patch("delpro_backend.services.image_service._convert_webp_to_jpeg", return_value=JPEG_BYTES)
     @patch("delpro_backend.services.image_service.AsyncSessionFactory")
-    async def test_raises_on_webp_bytes(self, mock_factory):
-        """Test that InvalidRequestError is raised for WebP bytes."""
+    async def test_converts_webp_to_jpeg(self, mock_factory, mock_convert):
+        """Test that WebP files are converted to JPEG and stored with .jpg extension."""
         svc, _ = _make_service()
 
+        mock_session = AsyncMock()
+        mock_session.add = MagicMock()
+        mock_factory.return_value.__aenter__.return_value = mock_session
+
         mock_file = MagicMock()
-        mock_file.content_type = "image/jpeg"
         mock_file.filename = "photo.webp"
         mock_file.read = AsyncMock(return_value=WEBP_BYTES)
 
-        with self.assertRaises(InvalidRequestError):
-            await svc.create_image(mock_file, "A webp photo")
+        result = await svc.create_image(mock_file, "A webp photo")
+
+        mock_convert.assert_called_once_with(WEBP_BYTES)
+        self.assertEqual(result.filename, "photo.jpg")
+        self.assertEqual(result.file_size_bytes, len(JPEG_BYTES))
 
     @patch("delpro_backend.services.image_service.AsyncSessionFactory")
     async def test_raises_on_oversized_file(self, mock_factory):

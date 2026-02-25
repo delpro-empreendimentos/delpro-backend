@@ -10,7 +10,7 @@ from langchain_core.tools import tool
 
 from delpro_backend.services.image_service import ImageService
 from delpro_backend.services.rag_service import RAGService
-from delpro_backend.services.whatsapp_api import send_message, upload_media
+from delpro_backend.services.whatsapp_api import upload_media
 from delpro_backend.utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -31,9 +31,9 @@ def build_tools(rag_service: RAGService, image_service: ImageService) -> list:
     async def search_knowledge_base(query: str) -> str:
         """Search Delpro's knowledge base for property information.
 
-        Use this tool to retrieve information about properties, prices, availability,
-        amenities, locations, floor plans, and commercial data from Delpro's document store.
-        This is your primary source of truth for answering questions about Delpro developments.
+        Use this tool when a user asks a question that you dont know the answer, and it is
+        specific about Delpro's knowledge. Anything about buildings, prices, etc. Just run this
+        function if you dont know the answer and it is specific about Delpro.
 
         Args:
             query: Search terms describing the desired information.
@@ -50,15 +50,15 @@ def build_tools(rag_service: RAGService, image_service: ImageService) -> list:
     async def send_whatsapp_image(phone_number: str, descriptions: list[str]) -> str:
         """Search for images by description and send them to a WhatsApp user.
 
-        Use this tool when the user requests images, photos, floor plans, or any
-        visual material. Provide one natural-language description per image you want
-        to find. The tool searches the image database semantically and sends the
-        best match for each description.
+        Use this tool when the user requests something that can contain visual information,
+        such as floor plan, sales table, building details, etc. Identify based in the conversation
+        all images that can fit in the user request, and build a short description one for each.
 
         Args:
-            phone_number: The recipient's WhatsApp phone number.
+            phone_number: Number of the user to send message (e.g.:+5551912345678)
             descriptions: List of natural-language descriptions, one per desired image
-                (e.g. ["piscina Edifício Solar", "planta 2 quartos"]).
+                (e.g. ["piscina edificio X", "planta 2 quartos edificio Y",
+                "tabela de vendas edificio Z"]).
 
         Returns:
             A summary of which images were sent and which had no match.
@@ -81,9 +81,11 @@ def build_tools(rag_service: RAGService, image_service: ImageService) -> list:
             if img is None:
                 not_found.append(desc)
             else:
-                send_tasks.append(upload_media(
+                send_tasks.append(
+                    upload_media(
                         img.file_content, img.content_type, img.filename, phone_number=phone_number
-                    ))
+                    )
+                )
 
         if not send_tasks:
             return f"No matching images found for: {descriptions}"

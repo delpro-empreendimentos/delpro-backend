@@ -6,6 +6,8 @@ from fastapi.responses import JSONResponse
 from delpro_backend.models.v1.document_models import (
     DocumentListItem,
     GetDocumentResponse,
+    UpdateDocumentContentRequest,
+    UpdateDocumentMetadataRequest,
 )
 from delpro_backend.services.document_service import DocumentService
 from delpro_backend.services.rag_service import RAGService
@@ -96,6 +98,71 @@ async def get_document(document_id: str):
         status=doc.status,
         chunk_count=len(chunks),
         chunks_preview=chunks_preview,
+    )
+
+
+@documents_router.get("/{document_id}/content")
+@handle_errors
+async def get_document_content(document_id: str):
+    """Return raw document bytes for preview/download.
+
+    Args:
+        document_id: The document ID
+
+    Returns:
+        Raw file bytes with correct Content-Type.
+    """
+    file_bytes, content_type, filename = await document_service.get_document_content(document_id)
+
+    return Response(
+        content=file_bytes,
+        media_type=content_type,
+        headers={"Content-Disposition": f'inline; filename="{filename}"'},
+    )
+
+
+@documents_router.put("/{document_id}/content")
+@handle_errors
+async def update_document_content(document_id: str, data: UpdateDocumentContentRequest):
+    """Update the text content of a document.
+
+    Args:
+        document_id: The document ID
+        data: Request body with new text content
+
+    Returns:
+        Updated document metadata.
+    """
+    new_bytes = data.content.encode("utf-8")
+    doc = await document_service.update_document_content(document_id, new_bytes)
+
+    return JSONResponse(
+        status_code=status.HTTP_200_OK,
+        content={
+            "id": doc.id,
+            "filename": doc.filename,
+            "file_size_bytes": doc.file_size_bytes,
+        },
+    )
+
+
+@documents_router.put("/{document_id}")
+@handle_errors
+async def update_document(document_id: str, data: UpdateDocumentMetadataRequest):
+    """Update document metadata (filename).
+
+    Args:
+        document_id: The document ID
+        data: Request body with fields to update
+
+    Returns:
+        Updated document metadata.
+    """
+    doc = await document_service.update_document_metadata(document_id, data)
+
+    return JSONResponse(
+        status_code=status.HTTP_200_OK,
+        content={"id": doc.id, "filename": doc.filename},
     )
 
 

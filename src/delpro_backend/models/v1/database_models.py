@@ -104,6 +104,25 @@ class ImageRow(Base):
     )
 
 
+class PromptRow(Base):
+    """ORM model for the agent_prompt table.
+
+    Single-row table keyed by a fixed id ('main'). Stores the editable
+    system prompt that the assistant service injects at runtime.
+    """
+
+    __tablename__ = "agent_prompt"
+
+    id: Mapped[str] = mapped_column(String(16), primary_key=True, default="main")
+    content: Mapped[str] = mapped_column(Text, nullable=False)
+    updated_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
+    )
+
+
 class ResourceDocument(BaseModel):
     """Pydantic model representing a resource document."""
 

@@ -8,7 +8,7 @@ from sqlalchemy import func, select
 
 from delpro_backend.db.db_service import AsyncSessionFactory
 from delpro_backend.models.v1.database_models import ChunkRow, DocumentRow
-from delpro_backend.models.v1.document_models import UploadedDocument
+from delpro_backend.models.v1.document_models import UpdateDocumentMetadataRequest, UploadedDocument
 from delpro_backend.models.v1.exception_models import (
     InvalidRequestError,
     MissingParametersRequestError,
@@ -202,6 +202,97 @@ class DocumentService:
             chunks = result.scalars().all()
 
         return (doc, chunks)
+
+    async def get_document_content(self, document_id: str) -> tuple[bytes, str, str]:
+        """Retrieve raw document bytes for download/preview.
+
+        Args:
+            document_id: The document ID
+
+        Returns:
+            Tuple of (file_bytes, content_type, filename).
+
+        Raises:
+            ResourceNotFoundError: If document not found.
+        """
+        doc = await self.get_document(document_id)
+        return doc.file_content, doc.content_type, doc.filename
+
+    async def update_document_content(self, document_id: str, new_content: bytes) -> DocumentRow:
+        """Replace the raw file content of a text document and re-process chunks.
+
+        Args:
+            document_id: The document ID
+            new_content: New file content as bytes
+
+        Returns:
+            Updated DocumentRow
+
+        Raises:
+            ResourceNotFoundError: If document not found.
+            InvalidRequestError: If document is not text/plain.
+        """
+        async with AsyncSessionFactory() as session:
+            doc = await session.get(DocumentRow, document_id)
+            if not doc:
+                logger.error(f"Document not found {document_id}", extra=logger_extra)
+                raise ResourceNotFoundError("Document", document_id)
+
+            if doc.content_type != "text/plain":
+                raise InvalidRequestError("Only text/plain documents can be edited.")
+
+            doc.file_content = new_content
+            doc.file_size_bytes = len(new_content)
+
+            # Delete existing chunks for this document
+            stmt = select(ChunkRow).where(ChunkRow.document_id == document_id)
+            result = await session.execute(stmt)
+            for chunk in result.scalars().all():
+                await session.delete(chunk)
+
+            await session.commit()
+            await session.refresh(doc)
+
+        # Re-process the document with new content
+        await self._rag_service.process_document(document_id, new_content, "text/plain")
+
+        # Update status to completed
+        await self.update_document_status(document_id, "completed")
+
+        logger.info(f"Updated document content {document_id}", extra=logger_extra)
+        return doc
+
+    async def update_document_metadata(
+        self,
+        document_id: str,
+        data: UpdateDocumentMetadataRequest,
+    ) -> DocumentRow:
+        """Update document metadata (filename).
+
+        Args:
+            document_id: The document ID
+            data: Fields to update
+
+        Returns:
+            Updated DocumentRow
+
+        Raises:
+            ResourceNotFoundError: If document not found.
+        """
+        async with AsyncSessionFactory() as session:
+            doc = await session.get(DocumentRow, document_id)
+            if not doc:
+                logger.error(f"Document not found {document_id}", extra=logger_extra)
+                raise ResourceNotFoundError("Document", document_id)
+
+            if data.filename is not None:
+                doc.filename = data.filename
+
+            await session.commit()
+            await session.refresh(doc)
+
+        logger.info(f"Updated document metadata {document_id}", extra=logger_extra)
+        return doc
 
     async def delete_document(self, document_id: str) -> None:
         """Delete a document and all its chunks (CASCADE).
