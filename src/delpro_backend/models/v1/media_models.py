@@ -1,12 +1,12 @@
-"""Pydantic models for image endpoints."""
+"""Pydantic models for media endpoints."""
 
 from datetime import datetime
 
 from pydantic import BaseModel, Field
 
 
-class UploadedImage(BaseModel):
-    """Response after uploading an image."""
+class UploadedMedia(BaseModel):
+    """Response after uploading a media file."""
 
     id: str
     filename: str
@@ -14,19 +14,8 @@ class UploadedImage(BaseModel):
     description: str
 
 
-class ImageListItem(BaseModel):
-    """Single image item in list response."""
-
-    id: str
-    filename: str
-    content_type: str
-    file_size_bytes: int
-    description: str
-    created_at: datetime
-
-
-class GetImageResponse(BaseModel):
-    """Response for GET /images/{id}."""
+class MediaListItem(BaseModel):
+    """Single media item in list response."""
 
     id: str
     filename: str
@@ -36,8 +25,19 @@ class GetImageResponse(BaseModel):
     created_at: datetime
 
 
-class UpdateImageRequest(BaseModel):
-    """Request body for PUT /images/{id}."""
+class GetMediaResponse(BaseModel):
+    """Response for GET /media/{id}."""
+
+    id: str
+    filename: str
+    content_type: str
+    file_size_bytes: int
+    description: str
+    created_at: datetime
+
+
+class UpdateMediaRequest(BaseModel):
+    """Request body for PUT /media/{id}."""
 
     description: str | None = Field(default=None, min_length=1)
     filename: str | None = Field(default=None, min_length=1, max_length=255)

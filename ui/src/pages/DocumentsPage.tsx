@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { useApi } from '../hooks/useApi';
 import { useToast } from '../context/ToastContext';
 import { LoadingSpinner } from '../components/LoadingSpinner';
+import { Pagination } from '../components/Pagination';
 import { FileCard } from '../components/FileCard';
 import { Modal } from '../components/Modal';
 import { UploadZone } from '../components/UploadZone';
@@ -10,20 +11,25 @@ import { ConfirmDialog } from '../components/ConfirmDialog';
 import { formatBytes, formatDate, getFileIcon } from '../utils';
 import type { Document } from '../types';
 
+const PAGE_SIZE = 20;
+
 export function DocumentsPage() {
   const api = useApi();
   const toast = useToast();
   const [documents, setDocuments] = useState<Document[]>([]);
+  const [total, setTotal] = useState(0);
+  const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showUpload, setShowUpload] = useState(false);
   const [detailDoc, setDetailDoc] = useState<Document | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<{ id: string; filename: string } | null>(null);
 
-  const loadList = async () => {
+  const loadList = async (p = page) => {
     try {
-      const docs = await api.listDocuments();
-      setDocuments(docs);
+      const result = await api.listDocuments((p - 1) * PAGE_SIZE, PAGE_SIZE);
+      setDocuments(result.items);
+      setTotal(result.total);
       setError(null);
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Failed to load documents');
@@ -33,9 +39,10 @@ export function DocumentsPage() {
   };
 
   useEffect(() => {
-    loadList();
+    setLoading(true);
+    loadList(page);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [page]);
 
   const handleCardClick = async (id: string) => {
     try {
@@ -65,11 +72,14 @@ export function DocumentsPage() {
           <p>No documents yet. Upload your first document!</p>
         </div>
       ) : (
-        <div className="file-grid">
-          {documents.map((doc) => (
-            <FileCard key={doc.id} doc={doc} onClick={() => handleCardClick(doc.id)} />
-          ))}
-        </div>
+        <>
+          <div className="file-grid">
+            {documents.map((doc) => (
+              <FileCard key={doc.id} doc={doc} onClick={() => handleCardClick(doc.id)} />
+            ))}
+          </div>
+          <Pagination page={page} total={total} pageSize={PAGE_SIZE} onChange={setPage} />
+        </>
       )}
 
       {showUpload && (
@@ -78,7 +88,8 @@ export function DocumentsPage() {
           onUploaded={() => {
             setShowUpload(false);
             toast('Documents uploaded successfully!', 'success');
-            loadList();
+            setPage(1);
+            loadList(1);
           }}
         />
       )}
@@ -90,7 +101,7 @@ export function DocumentsPage() {
           onSaved={() => {
             setDetailDoc(null);
             toast('Document saved!', 'success');
-            loadList();
+            loadList(page);
           }}
           onDelete={() => {
             const d = detailDoc;
@@ -114,7 +125,8 @@ export function DocumentsPage() {
               await api.deleteDocument(deleteTarget.id);
               setDeleteTarget(null);
               toast('Document deleted', 'success');
-              loadList();
+              setPage(1);
+              loadList(1);
             } catch (err: unknown) {
               toast(err instanceof Error ? err.message : 'Delete failed', 'error');
             }

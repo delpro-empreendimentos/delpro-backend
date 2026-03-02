@@ -7,7 +7,8 @@ import json
 from fastapi import HTTPException, Request
 
 from delpro_backend.assistant.assistant_service import AssistantService
-from delpro_backend.services.whatsapp_api import send_message
+from delpro_backend.services.broker_service import BrokerService
+from delpro_backend.services.whatsapp_api import WhatsappAPI
 from delpro_backend.utils.logger import get_logger
 from delpro_backend.utils.settings import settings
 
@@ -15,12 +16,16 @@ logger_extra = {"component.name": "WhatsappService", "component.version": "v1"}
 logger = get_logger(__name__)
 
 
+whatsapp_api = WhatsappAPI()
+
+
 class WhatsAppService:
     """Service for WhatsApp message operations."""
 
-    def __init__(self, assistant_service: AssistantService):
+    def __init__(self, assistant_service: AssistantService, broker_service: BrokerService):
         """WhatsApp service class module."""
         self._assistant_service = assistant_service
+        self._broker_service = broker_service
 
     async def signature_required(self, request: Request) -> dict:
         """Dependency to ensure incoming requests are valid and signed correctly.
@@ -60,14 +65,17 @@ class WhatsAppService:
         Returns:
             A tuple of (message_id, text, sender_phone_number, sender_name).
         """
-        message = body["entry"][0]["changes"][0]["value"]["messages"][0]
-        message_id = message["id"]
+        try:
+            message = body["entry"][0]["changes"][0]["value"]["messages"][0]
+            message_id = message["id"]
 
-        contact = body["entry"][0]["changes"][0]["value"]["contacts"][0]
-        sender_phone_number = contact.get("wa_id") or contact.get("sender_phone_number")
-        sender_name = contact["profile"]["name"]
-        text = message["text"]["body"]
-        return message_id, text, sender_phone_number, sender_name
+            contact = body["entry"][0]["changes"][0]["value"]["contacts"][0]
+            sender_phone_number = contact.get("wa_id") or contact.get("sender_phone_number")
+            sender_name = contact["profile"]["name"]
+            text = message["text"]["body"]
+            return message_id, text, sender_phone_number, sender_name
+        except Exception:
+            return "", "", "", ""
 
     async def handle_message(self, body: dict):
         """Process an incoming WhatsApp message and send a response.
@@ -87,12 +95,23 @@ class WhatsAppService:
             self.extract_information_whatsapp_message(body=body)
         )
 
+        if sender_phone_number == "":
+            return
+
+        await whatsapp_api.set_typing_status(message_id)
+        # await whatsapp_api.send_form_to_user(sender_phone_number)
+
         logger.info(
             "Processing message %s from %s (%s)",
             message_id,
             sender_name,
             sender_phone_number,
             extra=logger_extra,
+        )
+
+        await self._broker_service.upsert_from_interaction(
+            phone_number=sender_phone_number,
+            name=sender_name,
         )
 
         response_text = await self._assistant_service.chat(
@@ -102,7 +121,5 @@ class WhatsAppService:
         )
 
         # test only
-        if sender_phone_number == "123":
-            return response_text
 
-        await send_message(to=sender_phone_number, text=response_text)
+        await whatsapp_api.send_message(to=sender_phone_number, text=response_text)

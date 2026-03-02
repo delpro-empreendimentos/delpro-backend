@@ -4,6 +4,8 @@ import os
 import unittest
 from unittest.mock import AsyncMock, MagicMock, patch
 
+from langchain_google_genai._common import GoogleGenerativeAIError  # noqa: PLC2701
+
 from tests.keys_test import DEFAULT_KEYS
 
 for key, value in DEFAULT_KEYS.items():
@@ -15,14 +17,16 @@ from delpro_backend.assistant.assistant_service import AssistantService  # noqa:
 from delpro_backend.db.chat_history_service import PostgresChatMessageHistory  # noqa: E402
 
 
-def _make_service():
+def _make_service(fallback_llm=None):
     """Create AssistantService with fully mocked dependencies."""
     mock_llm = MagicMock()
     mock_llm.bind_tools.return_value = MagicMock()
     mock_rag = MagicMock()
-    mock_image = MagicMock()
+    mock_media = MagicMock()
     with patch("delpro_backend.assistant.assistant_service.build_tools", return_value=[]):
-        return AssistantService(rag_service=mock_rag, llm=mock_llm, image_service=mock_image)
+        return AssistantService(
+            rag_service=mock_rag, llm=mock_llm, media_service=mock_media, fallback_llm=fallback_llm
+        )
 
 
 class TestAssistantServiceGetSessionHistory(unittest.TestCase):
@@ -319,3 +323,81 @@ class TestAssistantServiceChat(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result, "New answer")
         prompt_call = mock_prompt_template.ainvoke.call_args[0][0]
         self.assertEqual(prompt_call["history"], existing)
+
+
+class TestAssistantServiceFallback(unittest.IsolatedAsyncioTestCase):
+    """Tests for fallback LLM behavior when primary hits quota."""
+
+    def _make_service_with_fallback(self):
+        """Return (svc, mock_history) with both primary and fallback LLMs."""
+        mock_fallback_llm = MagicMock()
+        mock_fallback_llm.bind_tools.return_value = MagicMock()
+
+        svc = _make_service(fallback_llm=mock_fallback_llm)
+
+        mock_history = AsyncMock(spec=PostgresChatMessageHistory)
+        mock_history.aget_messages = AsyncMock(return_value=[])
+        mock_history.aadd_messages = AsyncMock()
+
+        mock_prompt_value = MagicMock()
+        mock_prompt_value.to_messages.return_value = [HumanMessage(content="hi")]
+        mock_prompt_template = AsyncMock()
+        mock_prompt_template.ainvoke = AsyncMock(return_value=mock_prompt_value)
+
+        svc._get_session_history = MagicMock(return_value=mock_history)
+        svc._load_prompt_template = AsyncMock(return_value=mock_prompt_template)
+
+        return svc, mock_history
+
+    async def test_fallback_used_when_primary_raises_resource_exhausted(self):
+        """When primary LLM raises ResourceExhausted, fallback is used."""
+        svc, mock_history = self._make_service_with_fallback()
+
+        fallback_response = MagicMock(spec=AIMessage)
+        fallback_response.content = "Fallback answer"
+        fallback_response.tool_calls = []
+
+        svc._llm_with_tools.ainvoke = AsyncMock(side_effect=GoogleGenerativeAIError("429 quota exhausted"))
+        svc._fallback_llm_with_tools.ainvoke = AsyncMock(return_value=fallback_response)
+
+        result = await svc.chat("5511999", "Hi", "Alice")
+
+        self.assertEqual(result, "Fallback answer")
+        svc._llm_with_tools.ainvoke.assert_awaited_once()
+        svc._fallback_llm_with_tools.ainvoke.assert_awaited_once()
+
+    async def test_no_fallback_reraises_resource_exhausted(self):
+        """When no fallback is set and primary raises ResourceExhausted, it re-raises."""
+        svc, _ = self._make_service_with_fallback()
+        svc._fallback_llm_with_tools = None
+
+        svc._llm_with_tools.ainvoke = AsyncMock(side_effect=GoogleGenerativeAIError("429 quota exhausted"))
+
+        with self.assertRaises(GoogleGenerativeAIError):
+            await svc.chat("5511999", "Hi", "Alice")
+
+    async def test_fallback_used_on_round2_resource_exhausted(self):
+        """When primary LLM raises ResourceExhausted on round 2, fallback is used."""
+        svc, mock_history = self._make_service_with_fallback()
+
+        ai_round1 = MagicMock(spec=AIMessage)
+        ai_round1.content = ""
+        ai_round1.tool_calls = [{"name": "my_tool", "args": {}, "id": "c1"}]
+
+        fallback_response = MagicMock(spec=AIMessage)
+        fallback_response.content = "Fallback round 2"
+        fallback_response.tool_calls = []
+
+        svc._llm_with_tools.ainvoke = AsyncMock(
+            side_effect=[ai_round1, GoogleGenerativeAIError("429 quota exhausted")]
+        )
+        svc._fallback_llm_with_tools.ainvoke = AsyncMock(return_value=fallback_response)
+
+        mock_tool = AsyncMock()
+        mock_tool.ainvoke = AsyncMock(return_value="tool result")
+        svc._tools_by_name = {"my_tool": mock_tool}
+
+        result = await svc.chat("5511999", "Do something", "Bob")
+
+        self.assertEqual(result, "Fallback round 2")
+        svc._fallback_llm_with_tools.ainvoke.assert_awaited_once()

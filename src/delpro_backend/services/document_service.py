@@ -150,24 +150,32 @@ class DocumentService:
 
         return doc
 
-    async def list_documents(self) -> list[tuple[DocumentRow, int]]:
-        """List all documents with chunk counts.
+    async def list_documents(
+        self, skip: int = 0, limit: int = 20
+    ) -> tuple[list[tuple[DocumentRow, int]], int]:
+        """List documents with chunk counts and pagination.
 
         Returns:
-            List of (DocumentRow, chunk_count) tuples
+            Tuple of (list of (DocumentRow, chunk_count) tuples, total count)
         """
         try:
             async with AsyncSessionFactory() as session:
+                total: int = (
+                    await session.execute(select(func.count()).select_from(DocumentRow))
+                ).scalar_one()
+
                 stmt = (
                     select(DocumentRow, func.count(ChunkRow.id).label("chunk_count"))
                     .outerjoin(ChunkRow, DocumentRow.id == ChunkRow.document_id)
                     .group_by(DocumentRow.id)
                     .order_by(DocumentRow.upload_date.desc())
+                    .offset(skip)
+                    .limit(limit)
                 )
                 result = await session.execute(stmt)
                 rows = result.all()
 
-            return [(row[0], row[1]) for row in rows]
+            return [(row[0], row[1]) for row in rows], total
         except Exception as e:
             logger.error("An error ocurred while listing documents: %s", e, extra=logger_extra)
             raise e

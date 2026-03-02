@@ -12,8 +12,11 @@ export function Header() {
         <NavLink to="/documents" className={({ isActive }) => `nav-btn${isActive ? ' active' : ''}`}>
           Documents
         </NavLink>
-        <NavLink to="/images" className={({ isActive }) => `nav-btn${isActive ? ' active' : ''}`}>
-          Images
+        <NavLink to="/media" className={({ isActive }) => `nav-btn${isActive ? ' active' : ''}`}>
+          Media
+        </NavLink>
+        <NavLink to="/brokers" className={({ isActive }) => `nav-btn${isActive ? ' active' : ''}`}>
+          Corretores
         </NavLink>
         <NavLink to="/prompt" className={({ isActive }) => `nav-btn${isActive ? ' active' : ''}`}>
           Agent Prompt

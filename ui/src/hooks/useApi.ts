@@ -1,10 +1,10 @@
 import { useRef } from 'react';
 import { useDevMode } from '../context/DevModeContext';
 import * as api from '../services/api';
-import type { Document, Image, PromptData } from '../types';
+import type { Broker, BrokerListItem, Document, Media, Paginated, PromptData } from '../types';
 
-function devImageUrl(id: string): string {
-  const seed = id.replace(/^dev-img-[\d]+-/, '') || id;
+function devMediaUrl(id: string): string {
+  const seed = id.replace(/^dev-media-[\d]+-/, '') || id;
   return `https://picsum.photos/seed/${encodeURIComponent(seed)}/400/300`;
 }
 
@@ -19,10 +19,13 @@ export function useApi() {
 
   // Build the api object once (via ref) so it's referentially stable
   const apiRef = useRef({
-    async listDocuments(): Promise<Document[]> {
+    async listDocuments(skip = 0, limit = 20): Promise<Paginated<Document>> {
       const dm = devModeRef.current;
-      if (dm.active) return [...dm.documents];
-      return api.listDocuments();
+      if (dm.active) {
+        const all = [...dm.documents];
+        return { items: all.slice(skip, skip + limit), total: all.length };
+      }
+      return api.listDocuments(skip, limit);
     },
 
     async getDocument(id: string): Promise<Document> {
@@ -90,65 +93,68 @@ export function useApi() {
       return api.deleteDocument(id);
     },
 
-    async listImages(): Promise<Image[]> {
-      const dm = devModeRef.current;
-      if (dm.active) return [...dm.images];
-      return api.listImages();
-    },
-
-    async getImage(id: string): Promise<Image> {
+    async listMedia(skip = 0, limit = 20): Promise<Paginated<Media>> {
       const dm = devModeRef.current;
       if (dm.active) {
-        const img = dm.images.find((i) => i.id === id);
-        if (!img) throw new Error('Dev image not found');
-        return { ...img };
+        const all = [...dm.media];
+        return { items: all.slice(skip, skip + limit), total: all.length };
       }
-      return api.getImage(id);
+      return api.listMedia(skip, limit);
     },
 
-    imageContentUrl(id: string): string {
-      const dm = devModeRef.current;
-      if (dm.active && id.startsWith('dev-img-')) {
-        return devImageUrl(id);
-      }
-      return api.imageContentUrl(id);
-    },
-
-    async uploadImage(file: File, description: string) {
+    async getMedia(id: string): Promise<Media> {
       const dm = devModeRef.current;
       if (dm.active) {
-        await new Promise((r) => setTimeout(r, 400));
-        return;
+        const item = dm.media.find((i) => i.id === id);
+        if (!item) throw new Error('Dev media not found');
+        return { ...item };
       }
-      return api.uploadImage(file, description);
+      return api.getMedia(id);
     },
 
-    async updateImage(id: string, data: Partial<Image>) {
+    mediaContentUrl(id: string): string {
       const dm = devModeRef.current;
-      if (dm.active) {
-        await new Promise((r) => setTimeout(r, 200));
-        return;
+      if (dm.active && id.startsWith('dev-media-')) {
+        return devMediaUrl(id);
       }
-      return api.updateImage(id, data);
+      return api.mediaContentUrl(id);
     },
 
-    async replaceImageContent(id: string, file: File) {
+    async uploadMedia(file: File, description: string) {
       const dm = devModeRef.current;
       if (dm.active) {
         await new Promise((r) => setTimeout(r, 400));
         return;
       }
-      return api.replaceImageContent(id, file);
+      return api.uploadMedia(file, description);
     },
 
-    async deleteImage(id: string) {
+    async updateMedia(id: string, data: Partial<Media>) {
       const dm = devModeRef.current;
       if (dm.active) {
-        dm.deleteImage(id);
         await new Promise((r) => setTimeout(r, 200));
         return;
       }
-      return api.deleteImage(id);
+      return api.updateMedia(id, data);
+    },
+
+    async replaceMediaContent(id: string, file: File) {
+      const dm = devModeRef.current;
+      if (dm.active) {
+        await new Promise((r) => setTimeout(r, 400));
+        return;
+      }
+      return api.replaceMediaContent(id, file);
+    },
+
+    async deleteMedia(id: string) {
+      const dm = devModeRef.current;
+      if (dm.active) {
+        dm.deleteMedia(id);
+        await new Promise((r) => setTimeout(r, 200));
+        return;
+      }
+      return api.deleteMedia(id);
     },
 
     async getPrompt(): Promise<PromptData> {
@@ -167,6 +173,44 @@ export function useApi() {
         return { content, updated_at: new Date().toISOString() };
       }
       return api.updatePrompt(content);
+    },
+
+    async listBrokers(sort_by?: string, order?: string, search?: string, skip = 0, limit = 20): Promise<Paginated<BrokerListItem>> {
+      const dm = devModeRef.current;
+      if (dm.active) {
+        let list = [...dm.brokers];
+        if (search) {
+          const q = search.toLowerCase();
+          list = list.filter((b) => b.name.toLowerCase().includes(q));
+        }
+        const key = (sort_by ?? 'interactions') as keyof BrokerListItem;
+        list.sort((a, b) => {
+          const av = a[key];
+          const bv = b[key];
+          if (av === undefined || bv === undefined) return 0;
+          if (av < bv) return order === 'desc' ? 1 : -1;
+          if (av > bv) return order === 'desc' ? -1 : 1;
+          return 0;
+        });
+        return { items: list.slice(skip, skip + limit), total: list.length };
+      }
+      return api.listBrokers(sort_by, order, search, skip, limit);
+    },
+
+    async getBroker(phone: string): Promise<Broker> {
+      return api.getBroker(phone);
+    },
+
+    async createBroker(data: Partial<Broker>): Promise<Broker> {
+      return api.createBroker(data);
+    },
+
+    async updateBroker(phone: string, data: Partial<Broker>): Promise<Broker> {
+      return api.updateBroker(phone, data);
+    },
+
+    async deleteBroker(phone: string): Promise<void> {
+      return api.deleteBroker(phone);
     },
   });
 

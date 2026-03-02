@@ -207,6 +207,45 @@ body {
     overflow: hidden;
 }
 
+.image-card .pdf-thumb {
+    width: 100%;
+    height: 160px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--surface-raised);
+}
+
+.pdf-icon {
+    font-size: 28px;
+    font-weight: 700;
+    color: var(--danger);
+    background: var(--bg);
+    padding: 12px 20px;
+    border-radius: var(--radius);
+    border: 2px solid var(--danger);
+}
+
+.pdf-preview-placeholder {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-height: 200px;
+    background: var(--surface-raised);
+    border-radius: var(--radius);
+}
+
+.pdf-icon-large {
+    font-size: 36px;
+    font-weight: 700;
+    color: var(--danger);
+    background: var(--bg);
+    padding: 16px 28px;
+    border-radius: var(--radius);
+    border: 2px solid var(--danger);
+}
+
 /* Upload zone */
 .upload-zone {
     border: 2px dashed var(--border);
@@ -839,9 +878,148 @@ body {
     text-align: right;
 }
 
+/* Broker Cards */
+.broker-card {
+    cursor: pointer;
+    border-radius: var(--radius);
+    background: var(--surface);
+    border: 1px solid var(--border);
+    padding: 16px;
+    display: flex;
+    gap: 12px;
+    align-items: center;
+    transition: box-shadow 0.15s, border-color 0.15s;
+    min-width: 260px;
+}
+.broker-card:hover {
+    box-shadow: var(--shadow);
+    border-color: var(--primary);
+}
+.broker-avatar {
+    width: 48px;
+    height: 48px;
+    border-radius: 50%;
+    background: var(--primary);
+    color: #fff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 20px;
+    font-weight: 600;
+    flex-shrink: 0;
+}
+.broker-info { flex: 1; min-width: 0; }
+.broker-name {
+    font-weight: 600;
+    font-size: 0.95rem;
+    color: var(--text);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.broker-meta {
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+    margin-top: 2px;
+}
+
+.broker-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+    gap: 16px;
+}
+
+/* ── Pagination ─────────────────────────────────────────────────────────── */
+.pagination {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 16px;
+    margin-top: 24px;
+}
+
+.pagination-btn {
+    min-width: 90px;
+}
+
+.pagination-info {
+    font-size: 0.9rem;
+    color: var(--text-secondary);
+    white-space: nowrap;
+}
+
+/* Broker Controls */
+.broker-controls {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    margin-left: auto;
+}
+.broker-search {
+    padding: 6px 12px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: var(--surface);
+    color: var(--text);
+    font-size: 0.85rem;
+    width: 220px;
+}
+.broker-search:focus {
+    outline: none;
+    border-color: var(--primary);
+}
+.broker-sort {
+    padding: 6px 8px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: var(--surface);
+    color: var(--text);
+    font-size: 0.85rem;
+    cursor: pointer;
+}
+.broker-order-btn {
+    padding: 6px 10px;
+    font-size: 1rem;
+    min-width: 36px;
+}
+
+/* Checkbox Sections (broker detail) */
+.checkbox-section {
+    margin-bottom: 16px;
+}
+.checkbox-section h4 {
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: var(--text-secondary);
+    margin-bottom: 8px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+.checkbox-group {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+.checkbox-group label {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    cursor: pointer;
+    font-size: 0.9rem;
+    color: var(--text);
+}
+.checkbox-group input[type="checkbox"] {
+    width: 16px;
+    height: 16px;
+    accent-color: var(--primary);
+    cursor: pointer;
+}
+
 /* Responsive */
 @media (max-width: 768px) {
     .file-grid { grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); }
     .main { padding: 16px; }
     .modal { max-width: 95vw; }
+    .broker-controls { flex-wrap: wrap; }
+    .broker-search { width: 100%; }
 }

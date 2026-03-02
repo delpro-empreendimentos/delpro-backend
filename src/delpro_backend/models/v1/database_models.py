@@ -4,7 +4,7 @@ import datetime
 
 from pgvector.sqlalchemy import Vector
 from pydantic import BaseModel
-from sqlalchemy import DateTime, ForeignKey, Integer, LargeBinary, String, Text, func
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, LargeBinary, String, Text, func
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
@@ -85,8 +85,8 @@ class ChunkRow(Base):
     )
 
 
-class ImageRow(Base):
-    """ORM model for images table."""
+class MediaRow(Base):
+    """ORM model for media table (images and PDFs)."""
 
     __tablename__ = "images"
 
@@ -121,6 +121,36 @@ class PromptRow(Base):
         onupdate=func.now(),
         nullable=False,
     )
+
+
+class BrokerRow(Base):
+    """ORM model for brokers table."""
+
+    __tablename__ = "brokers"
+
+    phone_number: Mapped[str] = mapped_column(String(20), primary_key=True)
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    product_type_luxo: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    product_type_alto: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    product_type_medio: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    product_type_mcmv: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    sell_type_investimento: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    sell_type_moradia: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    region_zona_norte: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    region_zona_sul: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    region_zona_central: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    interactions: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    date_joined: Mapped[datetime.datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        nullable=False,
+    )
+    last_message_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        nullable=False,
+    )
+    sold_delpro_product: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
 
 class ResourceDocument(BaseModel):

@@ -1,4 +1,4 @@
-"""Tests for ImageService."""
+"""Tests for MediaService."""
 
 import os
 import unittest
@@ -9,23 +9,28 @@ from tests.keys_test import DEFAULT_KEYS
 for key, value in DEFAULT_KEYS.items():
     os.environ.setdefault(key, value)
 
+from delpro_backend.models.v1.database_models import MediaRow  # noqa: E402
 from delpro_backend.models.v1.exception_models import (  # noqa: E402
     InvalidRequestError,
     MissingParametersRequestError,
     ResourceNotFoundError,
 )
-from delpro_backend.models.v1.database_models import ImageRow  # noqa: E402
-from delpro_backend.services.image_service import ImageService, _detect_mime_type, _is_webp  # noqa: E402
+from delpro_backend.services.media_service import (  # noqa: E402
+    MediaService,
+    _detect_mime_type,
+    _is_webp,
+)
 
 JPEG_BYTES = b"\xff\xd8\xff" + b"x" * 100
 PNG_BYTES = b"\x89PNG\r\n\x1a\n" + b"x" * 100
 WEBP_BYTES = b"RIFF\x28\x00\x00\x00WEBP" + b"x" * 100
+PDF_BYTES = b"%PDF-1.4" + b"x" * 100
 
 
 def _make_service():
     mock_embeddings = AsyncMock()
     mock_embeddings.aembed_query = AsyncMock(return_value=[0.1] * 3072)
-    return ImageService(embeddings=mock_embeddings), mock_embeddings
+    return MediaService(embeddings=mock_embeddings), mock_embeddings
 
 
 class TestDetectMimeType(unittest.TestCase):
@@ -36,6 +41,9 @@ class TestDetectMimeType(unittest.TestCase):
 
     def test_detects_png(self):
         self.assertEqual(_detect_mime_type(PNG_BYTES), "image/png")
+
+    def test_detects_pdf(self):
+        self.assertEqual(_detect_mime_type(PDF_BYTES), "application/pdf")
 
     def test_returns_none_for_webp(self):
         self.assertIsNone(_detect_mime_type(WEBP_BYTES))
@@ -64,11 +72,11 @@ class TestIsWebp(unittest.TestCase):
         self.assertFalse(_is_webp(b"RIFF\x00\x00\x00\x00WAVE" + b"x" * 10))
 
 
-class TestImageServiceCreateImage(unittest.IsolatedAsyncioTestCase):
-    """Tests for ImageService.create_image."""
+class TestMediaServiceCreateMedia(unittest.IsolatedAsyncioTestCase):
+    """Tests for MediaService.create_media."""
 
-    @patch("delpro_backend.services.image_service.AsyncSessionFactory")
-    async def test_creates_jpeg_image_successfully(self, mock_factory):
+    @patch("delpro_backend.services.media_service.AsyncSessionFactory")
+    async def test_creates_jpeg_successfully(self, mock_factory):
         """Test creating a JPEG image succeeds."""
         svc, _ = _make_service()
 
@@ -81,14 +89,14 @@ class TestImageServiceCreateImage(unittest.IsolatedAsyncioTestCase):
         mock_file.filename = "photo.jpg"
         mock_file.read = AsyncMock(return_value=JPEG_BYTES)
 
-        result = await svc.create_image(mock_file, "A photo")
+        result = await svc.create_media(mock_file, "A photo")
 
         mock_session.add.assert_called_once()
         mock_session.commit.assert_awaited_once()
         self.assertEqual(result.filename, "photo.jpg")
 
-    @patch("delpro_backend.services.image_service.AsyncSessionFactory")
-    async def test_creates_png_image_successfully(self, mock_factory):
+    @patch("delpro_backend.services.media_service.AsyncSessionFactory")
+    async def test_creates_png_successfully(self, mock_factory):
         """Test creating a PNG image succeeds."""
         svc, _ = _make_service()
 
@@ -101,20 +109,40 @@ class TestImageServiceCreateImage(unittest.IsolatedAsyncioTestCase):
         mock_file.filename = "image.png"
         mock_file.read = AsyncMock(return_value=PNG_BYTES)
 
-        result = await svc.create_image(mock_file, "A PNG image")
+        result = await svc.create_media(mock_file, "A PNG image")
 
         self.assertEqual(result.filename, "image.png")
 
-    @patch("delpro_backend.services.image_service.AsyncSessionFactory")
+    @patch("delpro_backend.services.media_service.AsyncSessionFactory")
+    async def test_creates_pdf_successfully(self, mock_factory):
+        """Test creating a PDF succeeds."""
+        svc, _ = _make_service()
+
+        mock_session = AsyncMock()
+        mock_session.add = MagicMock()
+        mock_factory.return_value.__aenter__.return_value = mock_session
+
+        mock_file = MagicMock()
+        mock_file.content_type = "application/pdf"
+        mock_file.filename = "document.pdf"
+        mock_file.read = AsyncMock(return_value=PDF_BYTES)
+
+        result = await svc.create_media(mock_file, "A PDF document")
+
+        mock_session.add.assert_called_once()
+        mock_session.commit.assert_awaited_once()
+        self.assertEqual(result.filename, "document.pdf")
+
+    @patch("delpro_backend.services.media_service.AsyncSessionFactory")
     async def test_raises_on_missing_file(self, mock_factory):
         """Test that MissingParametersRequestError is raised when file is None."""
         svc, _ = _make_service()
 
         with self.assertRaises(MissingParametersRequestError):
-            await svc.create_image(None, "desc")
+            await svc.create_media(None, "desc")
 
-    @patch("delpro_backend.services.image_service._convert_webp_to_jpeg", return_value=JPEG_BYTES)
-    @patch("delpro_backend.services.image_service.AsyncSessionFactory")
+    @patch("delpro_backend.services.media_service._convert_webp_to_jpeg", return_value=JPEG_BYTES)
+    @patch("delpro_backend.services.media_service.AsyncSessionFactory")
     async def test_converts_webp_to_jpeg(self, mock_factory, mock_convert):
         """Test that WebP files are converted to JPEG and stored with .jpg extension."""
         svc, _ = _make_service()
@@ -127,15 +155,15 @@ class TestImageServiceCreateImage(unittest.IsolatedAsyncioTestCase):
         mock_file.filename = "photo.webp"
         mock_file.read = AsyncMock(return_value=WEBP_BYTES)
 
-        result = await svc.create_image(mock_file, "A webp photo")
+        result = await svc.create_media(mock_file, "A webp photo")
 
         mock_convert.assert_called_once_with(WEBP_BYTES)
         self.assertEqual(result.filename, "photo.jpg")
         self.assertEqual(result.file_size_bytes, len(JPEG_BYTES))
 
-    @patch("delpro_backend.services.image_service.AsyncSessionFactory")
-    async def test_raises_on_oversized_file(self, mock_factory):
-        """Test that InvalidRequestError is raised when file exceeds 5MB."""
+    @patch("delpro_backend.services.media_service.AsyncSessionFactory")
+    async def test_raises_on_oversized_image(self, mock_factory):
+        """Test that InvalidRequestError is raised when image exceeds 5MB."""
         svc, _ = _make_service()
 
         big_bytes = JPEG_BYTES + b"x" * (6 * 1024 * 1024)
@@ -146,9 +174,43 @@ class TestImageServiceCreateImage(unittest.IsolatedAsyncioTestCase):
         mock_file.read = AsyncMock(return_value=big_bytes)
 
         with self.assertRaises(InvalidRequestError):
-            await svc.create_image(mock_file, "big photo")
+            await svc.create_media(mock_file, "big photo")
 
-    @patch("delpro_backend.services.image_service.AsyncSessionFactory")
+    @patch("delpro_backend.services.media_service.AsyncSessionFactory")
+    async def test_pdf_under_20mb_accepted(self, mock_factory):
+        """Test that a PDF under 20MB is accepted."""
+        svc, _ = _make_service()
+
+        mock_session = AsyncMock()
+        mock_session.add = MagicMock()
+        mock_factory.return_value.__aenter__.return_value = mock_session
+
+        pdf_bytes = b"%PDF-1.4" + b"x" * (19 * 1024 * 1024)
+
+        mock_file = MagicMock()
+        mock_file.content_type = "application/pdf"
+        mock_file.filename = "large.pdf"
+        mock_file.read = AsyncMock(return_value=pdf_bytes)
+
+        result = await svc.create_media(mock_file, "Large PDF")
+        self.assertEqual(result.filename, "large.pdf")
+
+    @patch("delpro_backend.services.media_service.AsyncSessionFactory")
+    async def test_pdf_over_20mb_rejected(self, mock_factory):
+        """Test that a PDF over 20MB is rejected."""
+        svc, _ = _make_service()
+
+        pdf_bytes = b"%PDF-1.4" + b"x" * (21 * 1024 * 1024)
+
+        mock_file = MagicMock()
+        mock_file.content_type = "application/pdf"
+        mock_file.filename = "huge.pdf"
+        mock_file.read = AsyncMock(return_value=pdf_bytes)
+
+        with self.assertRaises(InvalidRequestError):
+            await svc.create_media(mock_file, "Huge PDF")
+
+    @patch("delpro_backend.services.media_service.AsyncSessionFactory")
     async def test_uses_untitled_when_no_filename(self, mock_factory):
         """Test that 'untitled' is used when filename is None."""
         svc, _ = _make_service()
@@ -162,31 +224,31 @@ class TestImageServiceCreateImage(unittest.IsolatedAsyncioTestCase):
         mock_file.filename = None
         mock_file.read = AsyncMock(return_value=JPEG_BYTES)
 
-        result = await svc.create_image(mock_file, "desc")
+        result = await svc.create_media(mock_file, "desc")
 
         self.assertEqual(result.filename, "untitled")
 
 
-class TestImageServiceGetImage(unittest.IsolatedAsyncioTestCase):
-    """Tests for ImageService.get_image."""
+class TestMediaServiceGetMedia(unittest.IsolatedAsyncioTestCase):
+    """Tests for MediaService.get_media."""
 
-    @patch("delpro_backend.services.image_service.AsyncSessionFactory")
-    async def test_returns_image_when_found(self, mock_factory):
-        """Test get_image returns row when it exists."""
+    @patch("delpro_backend.services.media_service.AsyncSessionFactory")
+    async def test_returns_media_when_found(self, mock_factory):
+        """Test get_media returns row when it exists."""
         svc, _ = _make_service()
 
-        mock_row = MagicMock(spec=ImageRow)
+        mock_row = MagicMock(spec=MediaRow)
         mock_session = AsyncMock()
         mock_session.get.return_value = mock_row
         mock_factory.return_value.__aenter__.return_value = mock_session
 
-        result = await svc.get_image("img-123")
+        result = await svc.get_media("media-123")
 
         self.assertEqual(result, mock_row)
 
-    @patch("delpro_backend.services.image_service.AsyncSessionFactory")
+    @patch("delpro_backend.services.media_service.AsyncSessionFactory")
     async def test_raises_when_not_found(self, mock_factory):
-        """Test get_image raises ResourceNotFoundError when not found."""
+        """Test get_media raises ResourceNotFoundError when not found."""
         svc, _ = _make_service()
 
         mock_session = AsyncMock()
@@ -194,18 +256,18 @@ class TestImageServiceGetImage(unittest.IsolatedAsyncioTestCase):
         mock_factory.return_value.__aenter__.return_value = mock_session
 
         with self.assertRaises(ResourceNotFoundError):
-            await svc.get_image("nonexistent")
+            await svc.get_media("nonexistent")
 
 
-class TestImageServiceGetImageContent(unittest.IsolatedAsyncioTestCase):
-    """Tests for ImageService.get_image_content."""
+class TestMediaServiceGetMediaContent(unittest.IsolatedAsyncioTestCase):
+    """Tests for MediaService.get_media_content."""
 
-    @patch("delpro_backend.services.image_service.AsyncSessionFactory")
+    @patch("delpro_backend.services.media_service.AsyncSessionFactory")
     async def test_returns_bytes_content_type_filename(self, mock_factory):
-        """Test get_image_content returns (bytes, content_type, filename)."""
+        """Test get_media_content returns (bytes, content_type, filename)."""
         svc, _ = _make_service()
 
-        mock_row = MagicMock(spec=ImageRow)
+        mock_row = MagicMock(spec=MediaRow)
         mock_row.file_content = JPEG_BYTES
         mock_row.content_type = "image/jpeg"
         mock_row.filename = "photo.jpg"
@@ -214,59 +276,67 @@ class TestImageServiceGetImageContent(unittest.IsolatedAsyncioTestCase):
         mock_session.get.return_value = mock_row
         mock_factory.return_value.__aenter__.return_value = mock_session
 
-        file_bytes, content_type, filename = await svc.get_image_content("img-123")
+        file_bytes, content_type, filename = await svc.get_media_content("media-123")
 
         self.assertEqual(file_bytes, JPEG_BYTES)
         self.assertEqual(content_type, "image/jpeg")
         self.assertEqual(filename, "photo.jpg")
 
 
-class TestImageServiceListImages(unittest.IsolatedAsyncioTestCase):
-    """Tests for ImageService.list_images."""
+class TestMediaServiceListMedia(unittest.IsolatedAsyncioTestCase):
+    """Tests for MediaService.list_media."""
 
-    @patch("delpro_backend.services.image_service.AsyncSessionFactory")
+    @patch("delpro_backend.services.media_service.AsyncSessionFactory")
     async def test_returns_list_of_rows(self, mock_factory):
-        """Test list_images returns list of ImageRow objects."""
+        """Test list_media returns list of MediaRow objects with total."""
         svc, _ = _make_service()
 
-        mock_row1 = MagicMock(spec=ImageRow)
-        mock_row2 = MagicMock(spec=ImageRow)
+        mock_row1 = MagicMock(spec=MediaRow)
+        mock_row2 = MagicMock(spec=MediaRow)
+
+        mock_count_result = MagicMock()
+        mock_count_result.scalar_one.return_value = 2
+        mock_data_result = MagicMock()
+        mock_data_result.scalars.return_value.all.return_value = [mock_row1, mock_row2]
 
         mock_session = AsyncMock()
-        mock_result = MagicMock()
-        mock_result.scalars.return_value.all.return_value = [mock_row1, mock_row2]
-        mock_session.execute.return_value = mock_result
+        mock_session.execute = AsyncMock(side_effect=[mock_count_result, mock_data_result])
         mock_factory.return_value.__aenter__.return_value = mock_session
 
-        result = await svc.list_images()
+        rows, total = await svc.list_media()
 
-        self.assertEqual(len(result), 2)
+        self.assertEqual(len(rows), 2)
+        self.assertEqual(total, 2)
 
-    @patch("delpro_backend.services.image_service.AsyncSessionFactory")
+    @patch("delpro_backend.services.media_service.AsyncSessionFactory")
     async def test_returns_empty_list(self, mock_factory):
-        """Test list_images returns empty list when no images."""
+        """Test list_media returns empty list with total 0."""
         svc, _ = _make_service()
 
+        mock_count_result = MagicMock()
+        mock_count_result.scalar_one.return_value = 0
+        mock_data_result = MagicMock()
+        mock_data_result.scalars.return_value.all.return_value = []
+
         mock_session = AsyncMock()
-        mock_result = MagicMock()
-        mock_result.scalars.return_value.all.return_value = []
-        mock_session.execute.return_value = mock_result
+        mock_session.execute = AsyncMock(side_effect=[mock_count_result, mock_data_result])
         mock_factory.return_value.__aenter__.return_value = mock_session
 
-        result = await svc.list_images()
+        rows, total = await svc.list_media()
 
-        self.assertEqual(result, [])
+        self.assertEqual(rows, [])
+        self.assertEqual(total, 0)
 
 
-class TestImageServiceUpdateImage(unittest.IsolatedAsyncioTestCase):
-    """Tests for ImageService.update_image."""
+class TestMediaServiceUpdateMedia(unittest.IsolatedAsyncioTestCase):
+    """Tests for MediaService.update_media."""
 
-    @patch("delpro_backend.services.image_service.AsyncSessionFactory")
+    @patch("delpro_backend.services.media_service.AsyncSessionFactory")
     async def test_updates_description_and_re_embeds(self, mock_factory):
         """Test that description update triggers re-embedding."""
         svc, mock_embeddings = _make_service()
 
-        mock_row = MagicMock(spec=ImageRow)
+        mock_row = MagicMock(spec=MediaRow)
         mock_row.description = "old description"
         mock_row.filename = "photo.jpg"
 
@@ -275,69 +345,69 @@ class TestImageServiceUpdateImage(unittest.IsolatedAsyncioTestCase):
         mock_session.refresh = AsyncMock(return_value=None)
         mock_factory.return_value.__aenter__.return_value = mock_session
 
-        from delpro_backend.models.v1.image_models import UpdateImageRequest
+        from delpro_backend.models.v1.media_models import UpdateMediaRequest
 
-        data = UpdateImageRequest(description="new description")
-        await svc.update_image("img-123", data)
+        data = UpdateMediaRequest(description="new description")
+        await svc.update_media("media-123", data)
 
         mock_embeddings.aembed_query.assert_awaited_once_with("new description")
         self.assertEqual(mock_row.description, "new description")
 
-    @patch("delpro_backend.services.image_service.AsyncSessionFactory")
+    @patch("delpro_backend.services.media_service.AsyncSessionFactory")
     async def test_updates_filename_only(self, mock_factory):
         """Test that only filename is updated when description is None."""
         svc, mock_embeddings = _make_service()
 
-        mock_row = MagicMock(spec=ImageRow)
+        mock_row = MagicMock(spec=MediaRow)
         mock_session = AsyncMock()
         mock_session.get.return_value = mock_row
         mock_session.refresh = AsyncMock(return_value=None)
         mock_factory.return_value.__aenter__.return_value = mock_session
 
-        from delpro_backend.models.v1.image_models import UpdateImageRequest
+        from delpro_backend.models.v1.media_models import UpdateMediaRequest
 
-        data = UpdateImageRequest(filename="new_name.jpg")
-        await svc.update_image("img-123", data)
+        data = UpdateMediaRequest(filename="new_name.jpg")
+        await svc.update_media("media-123", data)
 
         mock_embeddings.aembed_query.assert_not_awaited()
         self.assertEqual(mock_row.filename, "new_name.jpg")
 
-    @patch("delpro_backend.services.image_service.AsyncSessionFactory")
+    @patch("delpro_backend.services.media_service.AsyncSessionFactory")
     async def test_raises_when_not_found(self, mock_factory):
-        """Test that ResourceNotFoundError is raised when image not found."""
+        """Test that ResourceNotFoundError is raised when media not found."""
         svc, _ = _make_service()
 
         mock_session = AsyncMock()
         mock_session.get.return_value = None
         mock_factory.return_value.__aenter__.return_value = mock_session
 
-        from delpro_backend.models.v1.image_models import UpdateImageRequest
+        from delpro_backend.models.v1.media_models import UpdateMediaRequest
 
         with self.assertRaises(ResourceNotFoundError):
-            await svc.update_image("nonexistent", UpdateImageRequest(filename="x.jpg"))
+            await svc.update_media("nonexistent", UpdateMediaRequest(filename="x.jpg"))
 
 
-class TestImageServiceDeleteImage(unittest.IsolatedAsyncioTestCase):
-    """Tests for ImageService.delete_image."""
+class TestMediaServiceDeleteMedia(unittest.IsolatedAsyncioTestCase):
+    """Tests for MediaService.delete_media."""
 
-    @patch("delpro_backend.services.image_service.AsyncSessionFactory")
-    async def test_deletes_image_when_found(self, mock_factory):
-        """Test that image is deleted when found."""
+    @patch("delpro_backend.services.media_service.AsyncSessionFactory")
+    async def test_deletes_media_when_found(self, mock_factory):
+        """Test that media is deleted when found."""
         svc, _ = _make_service()
 
-        mock_row = MagicMock(spec=ImageRow)
+        mock_row = MagicMock(spec=MediaRow)
         mock_session = AsyncMock()
         mock_session.get.return_value = mock_row
         mock_factory.return_value.__aenter__.return_value = mock_session
 
-        await svc.delete_image("img-123")
+        await svc.delete_media("media-123")
 
         mock_session.delete.assert_awaited_once_with(mock_row)
         mock_session.commit.assert_awaited_once()
 
-    @patch("delpro_backend.services.image_service.AsyncSessionFactory")
+    @patch("delpro_backend.services.media_service.AsyncSessionFactory")
     async def test_raises_when_not_found(self, mock_factory):
-        """Test that ResourceNotFoundError is raised when image not found."""
+        """Test that ResourceNotFoundError is raised when media not found."""
         svc, _ = _make_service()
 
         mock_session = AsyncMock()
@@ -345,54 +415,54 @@ class TestImageServiceDeleteImage(unittest.IsolatedAsyncioTestCase):
         mock_factory.return_value.__aenter__.return_value = mock_session
 
         with self.assertRaises(ResourceNotFoundError):
-            await svc.delete_image("nonexistent")
+            await svc.delete_media("nonexistent")
 
 
-class TestImageServiceSearchByDescription(unittest.IsolatedAsyncioTestCase):
-    """Tests for ImageService.search_image_by_description."""
+class TestMediaServiceSearchByDescription(unittest.IsolatedAsyncioTestCase):
+    """Tests for MediaService.search_media_by_description."""
 
-    @patch("delpro_backend.services.image_service.AsyncSessionFactory")
-    async def test_returns_matching_image(self, mock_factory):
-        """Test that matching image is returned."""
+    @patch("delpro_backend.services.media_service.AsyncSessionFactory")
+    async def test_returns_matching_media(self, mock_factory):
+        """Test that matching media is returned."""
         svc, _ = _make_service()
 
-        mock_row = MagicMock(spec=ImageRow)
+        mock_row = MagicMock(spec=MediaRow)
         mock_row.file_content = JPEG_BYTES
 
         mock_session = AsyncMock()
         mock_session.scalar.return_value = mock_row
         mock_factory.return_value.__aenter__.return_value = mock_session
 
-        result = await svc.search_image_by_description("a photo of a pool")
+        result = await svc.search_media_by_description("a photo of a pool")
 
         self.assertEqual(result, mock_row)
 
-    @patch("delpro_backend.services.image_service.AsyncSessionFactory")
+    @patch("delpro_backend.services.media_service.AsyncSessionFactory")
     async def test_returns_none_when_no_match(self, mock_factory):
-        """Test that None is returned when no images exist."""
+        """Test that None is returned when no media exist."""
         svc, _ = _make_service()
 
         mock_session = AsyncMock()
         mock_session.scalar.return_value = None
         mock_factory.return_value.__aenter__.return_value = mock_session
 
-        result = await svc.search_image_by_description("something obscure")
+        result = await svc.search_media_by_description("something obscure")
 
         self.assertIsNone(result)
 
-    @patch("delpro_backend.services.image_service.AsyncSessionFactory")
+    @patch("delpro_backend.services.media_service.AsyncSessionFactory")
     async def test_forces_load_of_file_content(self, mock_factory):
         """Test that file_content is accessed (loaded) within session."""
         svc, _ = _make_service()
 
-        mock_row = MagicMock(spec=ImageRow)
+        mock_row = MagicMock(spec=MediaRow)
         mock_row.file_content = JPEG_BYTES
 
         mock_session = AsyncMock()
         mock_session.scalar.return_value = mock_row
         mock_factory.return_value.__aenter__.return_value = mock_session
 
-        result = await svc.search_image_by_description("pool photo")
+        result = await svc.search_media_by_description("pool photo")
 
         # file_content should have been accessed (the _ = row.file_content line)
         self.assertIsNotNone(result)

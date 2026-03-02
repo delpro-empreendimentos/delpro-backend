@@ -2,113 +2,125 @@ import { useState, useEffect, useRef } from 'react';
 import { useApi } from '../hooks/useApi';
 import { useToast } from '../context/ToastContext';
 import { LoadingSpinner } from '../components/LoadingSpinner';
-import { ImageCard } from '../components/ImageCard';
+import { Pagination } from '../components/Pagination';
+import { MediaCard } from '../components/MediaCard';
 import { Modal } from '../components/Modal';
 import { UploadZone } from '../components/UploadZone';
 import { TabPanel } from '../components/TabPanel';
 import { ConfirmDialog } from '../components/ConfirmDialog';
 import { Lightbox } from '../components/Lightbox';
 import { formatBytes, formatDate } from '../utils';
-import type { Image } from '../types';
+import type { Media } from '../types';
 
-export function ImagesPage() {
+const PAGE_SIZE = 20;
+const ACCEPT_TYPES = 'image/jpeg,image/png,application/pdf,.jpg,.jpeg,.png,.pdf';
+
+export function MediaPage() {
   const api = useApi();
   const toast = useToast();
-  const [images, setImages] = useState<Image[]>([]);
+  const [media, setMedia] = useState<Media[]>([]);
+  const [total, setTotal] = useState(0);
+  const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showUpload, setShowUpload] = useState(false);
-  const [detailImage, setDetailImage] = useState<Image | null>(null);
+  const [detailMedia, setDetailMedia] = useState<Media | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<{ id: string; filename: string } | null>(null);
 
-  const loadList = async () => {
+  const loadList = async (p = page) => {
     try {
-      const imgs = await api.listImages();
-      setImages(imgs);
+      const result = await api.listMedia((p - 1) * PAGE_SIZE, PAGE_SIZE);
+      setMedia(result.items);
+      setTotal(result.total);
       setError(null);
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Failed to load images');
+      setError(err instanceof Error ? err.message : 'Failed to load media');
     } finally {
       setLoading(false);
     }
   };
 
   useEffect(() => {
-    loadList();
+    setLoading(true);
+    loadList(page);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [page]);
 
   const handleCardClick = async (id: string) => {
     try {
-      const img = await api.getImage(id);
-      setDetailImage(img);
+      const item = await api.getMedia(id);
+      setDetailMedia(item);
     } catch (err: unknown) {
-      toast(err instanceof Error ? err.message : 'Failed to load image', 'error');
+      toast(err instanceof Error ? err.message : 'Failed to load media', 'error');
     }
   };
 
   return (
     <>
       <div className="toolbar">
-        <h2>Images</h2>
+        <h2>Media</h2>
         <button className="btn btn-primary" onClick={() => setShowUpload(true)}>
-          ➕ Upload Image
+          ➕ Upload Media
         </button>
       </div>
 
       {loading ? (
-        <LoadingSpinner message="Loading images..." />
+        <LoadingSpinner message="Loading media..." />
       ) : error ? (
-        <p style={{ color: 'var(--danger)' }}>Error loading images: {error}</p>
-      ) : images.length === 0 ? (
+        <p style={{ color: 'var(--danger)' }}>Error loading media: {error}</p>
+      ) : media.length === 0 ? (
         <div className="empty-state">
           <div className="icon">🖼️</div>
-          <p>No images yet. Upload your first image!</p>
+          <p>No media yet. Upload your first image or PDF!</p>
         </div>
       ) : (
-        <div className="file-grid">
-          {images.map((img) => (
-            <ImageCard
-              key={img.id}
-              image={img}
-              imageUrl={api.imageContentUrl(img.id)}
-              onClick={() => handleCardClick(img.id)}
-            />
-          ))}
-        </div>
+        <>
+          <div className="file-grid">
+            {media.map((item) => (
+              <MediaCard
+                key={item.id}
+                media={item}
+                mediaUrl={api.mediaContentUrl(item.id)}
+                onClick={() => handleCardClick(item.id)}
+              />
+            ))}
+          </div>
+          <Pagination page={page} total={total} pageSize={PAGE_SIZE} onChange={setPage} />
+        </>
       )}
 
       {showUpload && (
-        <ImageUploadModal
+        <MediaUploadModal
           onClose={() => setShowUpload(false)}
           onUploaded={() => {
             setShowUpload(false);
-            toast('Image uploaded successfully!', 'success');
-            loadList();
+            toast('Media uploaded successfully!', 'success');
+            setPage(1);
+            loadList(1);
           }}
         />
       )}
 
-      {detailImage && (
-        <ImageDetailModal
-          image={detailImage}
-          onClose={() => setDetailImage(null)}
+      {detailMedia && (
+        <MediaDetailModal
+          media={detailMedia}
+          onClose={() => setDetailMedia(null)}
           onSaved={() => {
-            setDetailImage(null);
-            toast('Image updated!', 'success');
-            loadList();
+            setDetailMedia(null);
+            toast('Media updated!', 'success');
+            loadList(page);
           }}
           onDelete={() => {
-            const img = detailImage;
-            setDetailImage(null);
-            setDeleteTarget({ id: img.id, filename: img.filename });
+            const item = detailMedia;
+            setDetailMedia(null);
+            setDeleteTarget({ id: item.id, filename: item.filename });
           }}
         />
       )}
 
       {deleteTarget && (
         <ConfirmDialog
-          title="Delete Image"
+          title="Delete Media"
           message={
             <>
               Are you sure you want to delete <strong>{deleteTarget.filename}</strong>?
@@ -116,10 +128,11 @@ export function ImagesPage() {
           }
           onConfirm={async () => {
             try {
-              await api.deleteImage(deleteTarget.id);
+              await api.deleteMedia(deleteTarget.id);
               setDeleteTarget(null);
-              toast('Image deleted', 'success');
-              loadList();
+              toast('Media deleted', 'success');
+              setPage(1);
+              loadList(1);
             } catch (err: unknown) {
               toast(err instanceof Error ? err.message : 'Delete failed', 'error');
             }
@@ -133,7 +146,7 @@ export function ImagesPage() {
 
 // ─── Upload Modal ─────────────────────────────────────────────────────────────
 
-function ImageUploadModal({ onClose, onUploaded }: { onClose: () => void; onUploaded: () => void }) {
+function MediaUploadModal({ onClose, onUploaded }: { onClose: () => void; onUploaded: () => void }) {
   const api = useApi();
   const toast = useToast();
   const [file, setFile] = useState<File | null>(null);
@@ -141,10 +154,16 @@ function ImageUploadModal({ onClose, onUploaded }: { onClose: () => void; onUplo
   const [description, setDescription] = useState('');
   const [uploading, setUploading] = useState(false);
 
+  const isPdf = file?.type === 'application/pdf';
+
   const handleFile = (files: File[]) => {
     if (files[0]) {
       setFile(files[0]);
-      setPreviewUrl(URL.createObjectURL(files[0]));
+      if (files[0].type !== 'application/pdf') {
+        setPreviewUrl(URL.createObjectURL(files[0]));
+      } else {
+        setPreviewUrl(null);
+      }
     }
   };
 
@@ -165,7 +184,7 @@ function ImageUploadModal({ onClose, onUploaded }: { onClose: () => void; onUplo
     if (!file) return;
     setUploading(true);
     try {
-      await api.uploadImage(file, description.trim());
+      await api.uploadMedia(file, description.trim());
       onUploaded();
     } catch (err: unknown) {
       toast(err instanceof Error ? err.message : 'Upload failed', 'error');
@@ -178,7 +197,7 @@ function ImageUploadModal({ onClose, onUploaded }: { onClose: () => void; onUplo
   return (
     <Modal
       onClose={onClose}
-      title="Upload Image"
+      title="Upload Media"
       footer={
         <div className="modal-footer">
           <button className="btn btn-secondary" onClick={onClose}>
@@ -193,14 +212,20 @@ function ImageUploadModal({ onClose, onUploaded }: { onClose: () => void; onUplo
       {!file ? (
         <UploadZone
           icon="🖼️"
-          message="Drag & drop a JPEG or PNG image, or click to browse"
-          hint="Max 5 MB"
-          accept="image/jpeg,image/png,.jpg,.jpeg,.png"
+          message="Drag & drop an image or PDF, or click to browse"
+          hint="Max 5 MB for images, 20 MB for PDFs"
+          accept={ACCEPT_TYPES}
           onFiles={handleFile}
         />
       ) : (
         <div className="staged-image-preview">
-          <img src={previewUrl!} alt="" />
+          {isPdf ? (
+            <div className="pdf-preview-placeholder">
+              <span className="pdf-icon-large">PDF</span>
+            </div>
+          ) : (
+            <img src={previewUrl!} alt="" />
+          )}
           <button className="staged-remove-btn" onClick={removeFile} title="Remove">
             &times;
           </button>
@@ -212,7 +237,7 @@ function ImageUploadModal({ onClose, onUploaded }: { onClose: () => void; onUplo
       <div className="form-group" style={{ marginTop: '16px' }}>
         <label>Description *</label>
         <textarea
-          placeholder="Describe this image..."
+          placeholder="Describe this media file..."
           rows={3}
           value={description}
           onChange={(e) => setDescription(e.target.value)}
@@ -224,13 +249,13 @@ function ImageUploadModal({ onClose, onUploaded }: { onClose: () => void; onUplo
 
 // ─── Detail Modal ─────────────────────────────────────────────────────────────
 
-function ImageDetailModal({
-  image,
+function MediaDetailModal({
+  media,
   onClose,
   onSaved,
   onDelete,
 }: {
-  image: Image;
+  media: Media;
   onClose: () => void;
   onSaved: () => void;
   onDelete: () => void;
@@ -238,12 +263,14 @@ function ImageDetailModal({
   const api = useApi();
   const toast = useToast();
   const [saving, setSaving] = useState(false);
-  const [filename, setFilename] = useState(image.filename);
-  const [description, setDescription] = useState(image.description || '');
+  const [filename, setFilename] = useState(media.filename);
+  const [description, setDescription] = useState(media.description || '');
   const [newFile, setNewFile] = useState<File | null>(null);
-  const [previewSrc, setPreviewSrc] = useState(api.imageContentUrl(image.id));
+  const [previewSrc, setPreviewSrc] = useState(api.mediaContentUrl(media.id));
   const [lightboxSrc, setLightboxSrc] = useState<string | null>(null);
   const replaceInputRef = useRef<HTMLInputElement>(null);
+
+  const isPdf = newFile?.type === 'application/pdf' || (!newFile && media.content_type === 'application/pdf');
 
   const handleReplace = () => replaceInputRef.current?.click();
 
@@ -251,8 +278,12 @@ function ImageDetailModal({
     const f = replaceInputRef.current?.files?.[0];
     if (f) {
       setNewFile(f);
-      const url = URL.createObjectURL(f);
-      setPreviewSrc(url);
+      if (f.type !== 'application/pdf') {
+        const url = URL.createObjectURL(f);
+        setPreviewSrc(url);
+      } else {
+        setPreviewSrc('');
+      }
     }
   };
 
@@ -262,18 +293,18 @@ function ImageDetailModal({
       let hasChanges = false;
 
       if (newFile) {
-        await api.replaceImageContent(image.id, newFile);
+        await api.replaceMediaContent(media.id, newFile);
         hasChanges = true;
       }
 
       const updates: Record<string, string> = {};
       const newName = filename.trim();
       const newDesc = description.trim();
-      if (newName && newName !== image.filename) updates.filename = newName;
-      if (newDesc && newDesc !== image.description) updates.description = newDesc;
+      if (newName && newName !== media.filename) updates.filename = newName;
+      if (newDesc && newDesc !== media.description) updates.description = newDesc;
 
       if (Object.keys(updates).length > 0) {
-        await api.updateImage(image.id, updates);
+        await api.updateMedia(media.id, updates);
         hasChanges = true;
       }
 
@@ -293,18 +324,29 @@ function ImageDetailModal({
   const previewTab = (
     <>
       <div className="image-preview-box">
-        <img src={previewSrc} alt={image.filename} />
-        <button className="image-fullscreen-btn" title="View fullscreen" onClick={() => setLightboxSrc(previewSrc)}>
-          ⛶
-        </button>
+        {isPdf ? (
+          <div className="pdf-preview-placeholder">
+            <span className="pdf-icon-large">PDF</span>
+            <a href={api.mediaContentUrl(media.id)} target="_blank" rel="noopener noreferrer" className="btn btn-secondary" style={{ marginTop: '8px' }}>
+              Open PDF
+            </a>
+          </div>
+        ) : (
+          <>
+            <img src={previewSrc} alt={media.filename} />
+            <button className="image-fullscreen-btn" title="View fullscreen" onClick={() => setLightboxSrc(previewSrc)}>
+              ⛶
+            </button>
+          </>
+        )}
         <button className="image-replace-btn" onClick={handleReplace}>
-          📷 Replace Image
+          Replace File
         </button>
       </div>
       <input
         ref={replaceInputRef}
         type="file"
-        accept="image/jpeg,image/png,.jpg,.jpeg,.png"
+        accept={ACCEPT_TYPES}
         style={{ display: 'none' }}
         onChange={handleReplaceChange}
       />
@@ -323,11 +365,11 @@ function ImageDetailModal({
       </div>
       <div className="detail-row">
         <span className="label">Created</span>
-        <span className="value">{formatDate(image.created_at)}</span>
+        <span className="value">{formatDate(media.created_at)}</span>
       </div>
       <div className="detail-row">
         <span className="label">Size</span>
-        <span className="value">{formatBytes(image.file_size_bytes)}</span>
+        <span className="value">{formatBytes(media.file_size_bytes)}</span>
       </div>
     </>
   );
@@ -336,7 +378,7 @@ function ImageDetailModal({
     <>
       <Modal
         onClose={onClose}
-        title="Image Details"
+        title="Media Details"
         footer={
           <div className="modal-footer-actions">
             <button className="btn btn-primary" disabled={saving} onClick={handleSave}>
@@ -358,7 +400,7 @@ function ImageDetailModal({
           ]}
         />
       </Modal>
-      {lightboxSrc && <Lightbox src={lightboxSrc} alt={image.filename} onClose={() => setLightboxSrc(null)} />}
+      {lightboxSrc && <Lightbox src={lightboxSrc} alt={media.filename} onClose={() => setLightboxSrc(null)} />}
     </>
   );
 }

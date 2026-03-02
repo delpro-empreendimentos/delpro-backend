@@ -5,7 +5,7 @@ import { useToast } from '../context/ToastContext';
 import type { MouseEvent, KeyboardEvent } from 'react';
 
 export function CommandPalette() {
-  const { active, isPaletteOpen, closePalette, addImages, addDocuments, clear, images, documents } = useDevMode();
+  const { active, isPaletteOpen, closePalette, addMedia, addDocuments, addBrokers, clear, media, documents, brokers } = useDevMode();
   const toast = useToast();
   const navigate = useNavigate();
   const inputRef = useRef<HTMLInputElement>(null);
@@ -32,12 +32,12 @@ export function CommandPalette() {
   };
 
   const runCommand = (cmd: string) => {
-    const imgMatch = cmd.match(/^create\s+images?\s+(\d+)$/);
-    if (imgMatch) {
-      const n = Math.min(parseInt(imgMatch[1]), 200);
-      addImages(n);
-      toast(`Created ${n} dev image${n !== 1 ? 's' : ''} (total: ${images.length + n})`, 'success');
-      navigate('/images');
+    const mediaMatch = cmd.match(/^create\s+(?:images?|media)\s+(\d+)$/);
+    if (mediaMatch) {
+      const n = Math.min(parseInt(mediaMatch[1]), 200);
+      addMedia(n);
+      toast(`Created ${n} dev media item${n !== 1 ? 's' : ''} (total: ${media.length + n})`, 'success');
+      navigate('/media');
       return;
     }
 
@@ -47,6 +47,15 @@ export function CommandPalette() {
       addDocuments(n);
       toast(`Created ${n} dev document${n !== 1 ? 's' : ''} (total: ${documents.length + n})`, 'success');
       navigate('/documents');
+      return;
+    }
+
+    const brokerMatch = cmd.match(/^create\s+brokers?\s+(\d+)$/);
+    if (brokerMatch) {
+      const n = Math.min(parseInt(brokerMatch[1]), 200);
+      addBrokers(n);
+      toast(`Created ${n} dev broker${n !== 1 ? 's' : ''} (total: ${brokers.length + n})`, 'success');
+      navigate('/brokers');
       return;
     }
 
@@ -69,11 +78,13 @@ export function CommandPalette() {
         <input
           ref={inputRef}
           className="cmd-palette-input"
-          placeholder='Try: "create image 30" or "create document 15" or "clear"'
+          placeholder='Try: "create broker 20" or "create media 30" or "clear"'
           onKeyDown={handleKeyDown}
         />
         <div className="cmd-palette-hint">
-          <code>create image &lt;n&gt;</code> — generate n mock images
+          <code>create broker &lt;n&gt;</code> — generate n mock brokers
+          <br />
+          <code>create media &lt;n&gt;</code> — generate n mock media items
           <br />
           <code>create document &lt;n&gt;</code> — generate n mock documents
           <br />

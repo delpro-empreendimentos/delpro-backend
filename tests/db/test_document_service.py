@@ -182,7 +182,7 @@ class TestDocumentServiceListDocuments(unittest.IsolatedAsyncioTestCase):
 
     @patch("delpro_backend.services.document_service.AsyncSessionFactory")
     async def test_returns_documents_with_chunk_counts(self, mock_factory):
-        """Test that list_documents returns documents with chunk counts."""
+        """Test that list_documents returns documents with chunk counts and total."""
         svc, _ = _make_service()
 
         mock_doc1 = MagicMock(spec=DocumentRow)
@@ -190,37 +190,42 @@ class TestDocumentServiceListDocuments(unittest.IsolatedAsyncioTestCase):
         mock_doc2 = MagicMock(spec=DocumentRow)
         mock_doc2.id = "doc-2"
 
+        mock_count_result = MagicMock()
+        mock_count_result.scalar_one.return_value = 2
+        mock_data_result = MagicMock()
+        mock_data_result.all.return_value = [(mock_doc1, 5), (mock_doc2, 3)]
+
         mock_session = AsyncMock()
-        mock_result = MagicMock()
-        mock_result.all.return_value = [
-            (mock_doc1, 5),
-            (mock_doc2, 3),
-        ]
-        mock_session.execute.return_value = mock_result
+        mock_session.execute = AsyncMock(side_effect=[mock_count_result, mock_data_result])
         mock_factory.return_value.__aenter__.return_value = mock_session
 
-        result = await svc.list_documents()
+        rows, total = await svc.list_documents()
 
-        self.assertEqual(len(result), 2)
-        self.assertEqual(result[0][0].id, "doc-1")
-        self.assertEqual(result[0][1], 5)
-        self.assertEqual(result[1][0].id, "doc-2")
-        self.assertEqual(result[1][1], 3)
+        self.assertEqual(len(rows), 2)
+        self.assertEqual(total, 2)
+        self.assertEqual(rows[0][0].id, "doc-1")
+        self.assertEqual(rows[0][1], 5)
+        self.assertEqual(rows[1][0].id, "doc-2")
+        self.assertEqual(rows[1][1], 3)
 
     @patch("delpro_backend.services.document_service.AsyncSessionFactory")
     async def test_returns_empty_list_when_no_documents(self, mock_factory):
         """Test that empty list is returned when no documents."""
         svc, _ = _make_service()
 
+        mock_count_result = MagicMock()
+        mock_count_result.scalar_one.return_value = 0
+        mock_data_result = MagicMock()
+        mock_data_result.all.return_value = []
+
         mock_session = AsyncMock()
-        mock_result = MagicMock()
-        mock_result.all.return_value = []
-        mock_session.execute.return_value = mock_result
+        mock_session.execute = AsyncMock(side_effect=[mock_count_result, mock_data_result])
         mock_factory.return_value.__aenter__.return_value = mock_session
 
-        result = await svc.list_documents()
+        rows, total = await svc.list_documents()
 
-        self.assertEqual(result, [])
+        self.assertEqual(rows, [])
+        self.assertEqual(total, 0)
 
     @patch("delpro_backend.services.document_service.AsyncSessionFactory")
     async def test_reraises_on_exception(self, mock_factory):

@@ -1,6 +1,6 @@
 """Router for document CRUD operations."""
 
-from fastapi import APIRouter, Response, UploadFile, status
+from fastapi import APIRouter, Query, Response, UploadFile, status
 from fastapi.responses import JSONResponse
 
 from delpro_backend.models.v1.document_models import (
@@ -49,13 +49,16 @@ async def upload_documents(files: list[UploadFile]):
 
 @documents_router.get("")
 @handle_errors
-async def list_documents():
-    """List all uploaded documents with metadata.
+async def list_documents(
+    skip: int = Query(default=0, ge=0),
+    limit: int = Query(default=20, ge=1, le=200),
+):
+    """List uploaded documents with metadata and pagination.
 
     Returns:
-        List of documents with chunk counts
+        Paginated list of documents with chunk counts
     """
-    docs_with_counts = await document_service.list_documents()
+    docs_with_counts, total = await document_service.list_documents(skip=skip, limit=limit)
 
     documents = [
         DocumentListItem(
@@ -70,7 +73,9 @@ async def list_documents():
         for doc, count in docs_with_counts
     ]
 
-    return JSONResponse(status_code=status.HTTP_200_OK, content=documents)
+    return JSONResponse(
+        status_code=status.HTTP_200_OK, content={"items": documents, "total": total}
+    )
 
 
 @documents_router.get("/{document_id}")

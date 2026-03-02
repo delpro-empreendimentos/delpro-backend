@@ -1,0 +1,98 @@
+# [NOME EMPREENDIMENTO] Visao geral do empreendimento
+
+[NOME DO EMPREENDIMENTO] e um empreendimento [TIPO: residencial/comercial/misto] localizado no bairro [BAIRRO], em [CIDADE] - [ESTADO]. O projeto contempla [NUMERO] torres com [NUMERO] pavimentos cada, totalizando [NUMERO] unidades. O padrao do empreendimento e [PADRAO: alto padrao, medio padrao, economico, Minha Casa Minha Vida]. Previsao de entrega: [MES/ANO]. Estagio atual da obra: [PERCENTUAL]% concluido.
+
+
+# [NOME EMPREENDIMENTO] Localizacao e entorno
+
+Endereco: [ENDERECO COMPLETO].
+Bairro: [BAIRRO].
+Proximidades: [LISTA DE PONTOS DE REFERENCIA - escolas, hospitais, shopping centers, estacoes de metro/onibus, parques, supermercados, etc.].
+Distancia ao centro: [DISTANCIA].
+Vias de acesso: [PRINCIPAIS VIAS].
+
+
+# [NOME EMPREENDIMENTO] Tipos de unidades disponiveis
+
+Tipo 1 - Apartamento de [NUMERO] dormitorios:
+  Area privativa: [METROS] m2.
+  Suites: [NUMERO].
+  Vagas de garagem: [NUMERO].
+  Valor a partir de: R$ [VALOR].
+  Unidades disponiveis: [NUMERO].
+
+Tipo 2 - Apartamento de [NUMERO] dormitorios:
+  Area privativa: [METROS] m2.
+  Suites: [NUMERO].
+  Vagas de garagem: [NUMERO].
+  Valor a partir de: R$ [VALOR].
+  Unidades disponiveis: [NUMERO].
+
+[Repetir para cada tipo de unidade]
+
+
+# [NOME EMPREENDIMENTO] Tabela de precos e condicoes de pagamento
+
+[TIPO DE UNIDADE 1]:
+  Valor: R$ [VALOR].
+  Entrada: R$ [VALOR] ([PERCENTUAL]%).
+  Parcelas durante obra: [NUMERO]x de R$ [VALOR].
+  Financiamento: [DETALHES DO FINANCIAMENTO].
+  Desconto para pagamento a vista: [PERCENTUAL]%.
+
+[TIPO DE UNIDADE 2]:
+  [Mesma estrutura acima]
+
+Bancos parceiros para financiamento: [LISTA DE BANCOS].
+Aceita FGTS: [SIM/NAO].
+Aceita permuta: [SIM/NAO].
+
+
+# [NOME EMPREENDIMENTO] Areas comuns e infraestrutura de lazer
+
+[ITEM 1, ex: Piscina adulto e infantil].
+[ITEM 2, ex: Salao de festas com churrasqueira].
+[ITEM 3, ex: Academia equipada].
+[ITEM 4, ex: Playground].
+[ITEM 5, ex: Espaco coworking].
+[ITEM 6, ex: Pet place].
+[ITEM 7, ex: Bicicletario].
+[Listar todos os itens de lazer e areas comuns]
+
+
+# [NOME EMPREENDIMENTO] Acabamentos e especificacoes tecnicas
+
+Piso dos apartamentos: [ESPECIFICACAO].
+Revestimento dos banheiros: [ESPECIFICACAO].
+Bancadas: [ESPECIFICACAO].
+Esquadrias: [ESPECIFICACAO].
+Fachada: [ESPECIFICACAO].
+Elevadores: [NUMERO] por torre, marca [MARCA].
+Sistema de seguranca: [DETALHES].
+Sustentabilidade: [CERTIFICACOES/RECURSOS, ex: captacao de agua da chuva, energia solar].
+
+
+C# [NOME EMPREENDIMENTO] omissao e condicoes para corretores
+
+Comissao: [PERCENTUAL]% sobre o valor da venda.
+Bonificacao por meta: [DETALHES, se houver].
+Prazo de pagamento: [PRAZO].
+Material de vendas disponivel: [LISTA - book, tabela, plantas, tour virtual, etc.].
+Contato do gestor comercial: [NOME] - [TELEFONE] - [EMAIL].
+
+
+# [NOME EMPREENDIMENTO] Status da obra e cronograma
+
+Data de lancamento: [DATA].
+Inicio da obra: [DATA].
+Previsao de conclusao: [DATA].
+Estagio atual: [DESCRICAO DO ESTAGIO, ex: fundacao concluida, estrutura no 5o andar].
+Percentual concluido: [PERCENTUAL]%.
+Registro de incorporacao: [NUMERO DO RI].
+
+
+# [NOME EMPREENDIMENTO] Diferenciais do empreendimento
+
+[DIFERENCIAL 1]: [DESCRICAO].
+[DIFERENCIAL 2]: [DESCRICAO].
+[DIFERENCIAL 3]: [DESCRICAO].

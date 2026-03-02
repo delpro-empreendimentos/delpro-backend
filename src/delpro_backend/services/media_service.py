@@ -1,4 +1,4 @@
-"""Service for image CRUD operations."""
+"""Service for media CRUD operations (images and PDFs)."""
 
 import io
 from uuid import uuid4
@@ -9,24 +9,26 @@ from PIL import Image
 from sqlalchemy import select
 
 from delpro_backend.db.db_service import AsyncSessionFactory
-from delpro_backend.models.v1.database_models import ImageRow
+from delpro_backend.models.v1.database_models import MediaRow
 from delpro_backend.models.v1.exception_models import (
     InvalidRequestError,
     MissingParametersRequestError,
     ResourceNotFoundError,
 )
-from delpro_backend.models.v1.image_models import UpdateImageRequest, UploadedImage
+from delpro_backend.models.v1.media_models import UpdateMediaRequest, UploadedMedia
 from delpro_backend.utils.logger import get_logger
 
-logger_extra = {"component.name": "ImageService", "component.version": "v1"}
+logger_extra = {"component.name": "MediaService", "component.version": "v1"}
 logger = get_logger(__name__)
 
-_ALLOWED_IMAGE_TYPES = {"image/jpeg", "image/png"}
+_ALLOWED_MEDIA_TYPES = {"image/jpeg", "image/png", "application/pdf"}
 _MAX_IMAGE_SIZE_MB = 5
+_MAX_PDF_SIZE_MB = 20
 
 _MAGIC_BYTES: list[tuple[bytes, str]] = [
     (b"\xff\xd8\xff", "image/jpeg"),
     (b"\x89PNG\r\n\x1a\n", "image/png"),
+    (b"%PDF", "application/pdf"),
 ]
 
 
@@ -73,7 +75,7 @@ def _detect_mime_type(data: bytes) -> str | None:
     """Detect MIME type from magic bytes.
 
     Args:
-        data: Raw image bytes.
+        data: Raw file bytes.
 
     Returns:
         MIME type string, or None if not recognised.
@@ -84,39 +86,48 @@ def _detect_mime_type(data: bytes) -> str | None:
     return None
 
 
-class ImageService:
-    """Service for image CRUD operations with semantic search."""
+def _max_size_for_type(content_type: str) -> int:
+    """Return the maximum allowed file size in MB for a given content type.
+
+    Args:
+        content_type: MIME type of the file.
+
+    Returns:
+        Maximum size in MB.
+    """
+    if content_type == "application/pdf":
+        return _MAX_PDF_SIZE_MB
+    return _MAX_IMAGE_SIZE_MB
+
+
+class MediaService:
+    """Service for media CRUD operations with semantic search."""
 
     def __init__(self, embeddings: GoogleGenerativeAIEmbeddings):
-        """Initialize ImageService with embeddings model.
+        """Initialize MediaService with embeddings model.
 
         Args:
             embeddings: Embeddings model for generating description vectors.
         """
         self._embeddings = embeddings
 
-    async def create_image(self, file: UploadFile, description: str) -> UploadedImage:
-        """Upload and store an image.
+    async def create_media(self, file: UploadFile, description: str) -> UploadedMedia:
+        """Upload and store a media file (image or PDF).
 
         WebP files are automatically converted to JPEG before storage.
 
         Args:
-            file: Uploaded image file (JPEG, PNG, or WebP, max 5 MB).
+            file: Uploaded file (JPEG, PNG, WebP, or PDF).
             description: Free-text description used for semantic search.
 
         Returns:
-            UploadedImage with metadata.
+            UploadedMedia with metadata.
         """
         if not file:
             raise MissingParametersRequestError()
 
         file_bytes = await file.read()
         file_size_mb = len(file_bytes) / (1024 * 1024)
-
-        if file_size_mb > _MAX_IMAGE_SIZE_MB:
-            raise InvalidRequestError(
-                f"Image too large ({file_size_mb:.2f} MB). Maximum: {_MAX_IMAGE_SIZE_MB} MB"
-            )
 
         filename = file.filename or "untitled"
 
@@ -129,16 +140,24 @@ class ImageService:
                 filename = filename[:-5] + ".jpg"
         else:
             actual_type = _detect_mime_type(file_bytes)
-            if actual_type is None or actual_type not in _ALLOWED_IMAGE_TYPES:
-                raise InvalidRequestError("Only JPEG, PNG, and WebP images are accepted.")
+            if actual_type is None or actual_type not in _ALLOWED_MEDIA_TYPES:
+                raise InvalidRequestError(
+                    "Only JPEG, PNG, WebP images, and PDF files are accepted."
+                )
             content_type = actual_type
 
+        max_size = _max_size_for_type(content_type)
+        if file_size_mb > max_size:
+            raise InvalidRequestError(
+                f"File too large ({file_size_mb:.2f} MB). Maximum for {content_type}: {max_size} MB"
+            )
+
         embedding = await self._embeddings.aembed_query(description)
-        image_id = str(uuid4())
+        media_id = str(uuid4())
 
         async with AsyncSessionFactory() as session:
-            row = ImageRow(
-                id=image_id,
+            row = MediaRow(
+                id=media_id,
                 filename=filename,
                 content_type=content_type,
                 file_size_bytes=len(file_bytes),
@@ -149,80 +168,84 @@ class ImageService:
             session.add(row)
             await session.commit()
 
-        logger.info("Created image %s (%s)", image_id, filename, extra=logger_extra)
+        logger.info("Created media %s (%s)", media_id, filename, extra=logger_extra)
 
-        return UploadedImage(
-            id=image_id,
+        return UploadedMedia(
+            id=media_id,
             filename=filename,
             file_size_bytes=len(file_bytes),
             description=description,
         )
 
-    async def list_images(self) -> list[ImageRow]:
-        """List all images (metadata only, no file content loaded eagerly).
+    async def list_media(self, skip: int = 0, limit: int = 20) -> tuple[list[MediaRow], int]:
+        """List media with pagination (metadata only, no file content loaded eagerly).
 
         Returns:
-            List of ImageRow objects.
+            Tuple of (list of MediaRow objects, total count).
         """
         async with AsyncSessionFactory() as session:
-            stmt = select(ImageRow).order_by(ImageRow.created_at.desc())
-            result = await session.execute(stmt)
-            return list(result.scalars().all())
+            from sqlalchemy import func as sa_func
 
-    async def get_image(self, image_id: str) -> ImageRow:
-        """Retrieve an image by ID.
+            count_stmt = select(sa_func.count()).select_from(MediaRow)
+            total: int = (await session.execute(count_stmt)).scalar_one()
+            stmt = select(MediaRow).order_by(MediaRow.created_at.desc()).offset(skip).limit(limit)
+            result = await session.execute(stmt)
+            return list(result.scalars().all()), total
+
+    async def get_media(self, media_id: str) -> MediaRow:
+        """Retrieve a media file by ID.
 
         Args:
-            image_id: The image UUID.
+            media_id: The media UUID.
 
         Returns:
-            ImageRow.
+            MediaRow.
 
         Raises:
-            ResourceNotFoundError: If image not found.
+            ResourceNotFoundError: If media not found.
         """
         async with AsyncSessionFactory() as session:
-            row = await session.get(ImageRow, image_id)
+            row = await session.get(MediaRow, media_id)
 
         if not row:
-            raise ResourceNotFoundError("Image", image_id)
+            raise ResourceNotFoundError("Media", media_id)
 
         return row
 
-    async def get_image_content(self, image_id: str) -> tuple[bytes, str, str]:
-        """Retrieve raw image bytes for download/preview.
+    async def get_media_content(self, media_id: str) -> tuple[bytes, str, str]:
+        """Retrieve raw file bytes for download/preview.
 
         Args:
-            image_id: The image UUID.
+            media_id: The media UUID.
 
         Returns:
             Tuple of (file_bytes, content_type, filename).
 
         Raises:
-            ResourceNotFoundError: If image not found.
+            ResourceNotFoundError: If media not found.
         """
-        row = await self.get_image(image_id)
+        row = await self.get_media(media_id)
         return row.file_content, row.content_type, row.filename
 
-    async def update_image(self, image_id: str, data: UpdateImageRequest) -> ImageRow:
-        """Update image metadata (description and/or filename).
+    async def update_media(self, media_id: str, data: UpdateMediaRequest) -> MediaRow:
+        """Update media metadata (description and/or filename).
 
         Re-embeds the description if it changes.
 
         Args:
-            image_id: The image UUID.
+            media_id: The media UUID.
             data: Fields to update.
 
         Returns:
-            Updated ImageRow.
+            Updated MediaRow.
 
         Raises:
-            ResourceNotFoundError: If image not found.
+            ResourceNotFoundError: If media not found.
         """
         async with AsyncSessionFactory() as session:
-            row = await session.get(ImageRow, image_id)
+            row = await session.get(MediaRow, media_id)
             if not row:
-                raise ResourceNotFoundError("Image", image_id)
+                raise ResourceNotFoundError("Media", media_id)
 
             if data.description is not None:
                 row.description = data.description
@@ -233,21 +256,21 @@ class ImageService:
             await session.commit()
             await session.refresh(row)
 
-        logger.info("Updated image %s", image_id, extra=logger_extra)
+        logger.info("Updated media %s", media_id, extra=logger_extra)
         return row
 
-    async def replace_image_content(self, image_id: str, file: UploadFile) -> ImageRow:
-        """Replace the image file content, keeping existing metadata.
+    async def replace_media_content(self, media_id: str, file: UploadFile) -> MediaRow:
+        """Replace the media file content, keeping existing metadata.
 
         Args:
-            image_id: The image UUID.
-            file: New image file (JPEG, PNG, or WebP).
+            media_id: The media UUID.
+            file: New file (JPEG, PNG, WebP, or PDF).
 
         Returns:
-            Updated ImageRow.
+            Updated MediaRow.
 
         Raises:
-            ResourceNotFoundError: If image not found.
+            ResourceNotFoundError: If media not found.
             InvalidRequestError: If file type is invalid or too large.
         """
         if not file:
@@ -255,11 +278,6 @@ class ImageService:
 
         file_bytes = await file.read()
         file_size_mb = len(file_bytes) / (1024 * 1024)
-
-        if file_size_mb > _MAX_IMAGE_SIZE_MB:
-            raise InvalidRequestError(
-                f"Image too large ({file_size_mb:.2f} MB). Maximum: {_MAX_IMAGE_SIZE_MB} MB"
-            )
 
         filename = file.filename or "untitled"
 
@@ -270,14 +288,22 @@ class ImageService:
                 filename = filename[:-5] + ".jpg"
         else:
             actual_type = _detect_mime_type(file_bytes)
-            if actual_type is None or actual_type not in _ALLOWED_IMAGE_TYPES:
-                raise InvalidRequestError("Only JPEG, PNG, and WebP images are accepted.")
+            if actual_type is None or actual_type not in _ALLOWED_MEDIA_TYPES:
+                raise InvalidRequestError(
+                    "Only JPEG, PNG, WebP images, and PDF files are accepted."
+                )
             content_type = actual_type
 
+        max_size = _max_size_for_type(content_type)
+        if file_size_mb > max_size:
+            raise InvalidRequestError(
+                f"File too large ({file_size_mb:.2f} MB). Maximum for {content_type}: {max_size} MB"
+            )
+
         async with AsyncSessionFactory() as session:
-            row = await session.get(ImageRow, image_id)
+            row = await session.get(MediaRow, media_id)
             if not row:
-                raise ResourceNotFoundError("Image", image_id)
+                raise ResourceNotFoundError("Media", media_id)
 
             row.file_content = file_bytes
             row.file_size_bytes = len(file_bytes)
@@ -287,44 +313,44 @@ class ImageService:
             await session.commit()
             await session.refresh(row)
 
-        logger.info("Replaced image content %s", image_id, extra=logger_extra)
+        logger.info("Replaced media content %s", media_id, extra=logger_extra)
         return row
 
-    async def delete_image(self, image_id: str) -> None:
-        """Delete an image.
+    async def delete_media(self, media_id: str) -> None:
+        """Delete a media file.
 
         Args:
-            image_id: The image UUID.
+            media_id: The media UUID.
 
         Raises:
-            ResourceNotFoundError: If image not found.
+            ResourceNotFoundError: If media not found.
         """
         async with AsyncSessionFactory() as session:
-            row = await session.get(ImageRow, image_id)
+            row = await session.get(MediaRow, media_id)
             if not row:
-                raise ResourceNotFoundError("Image", image_id)
+                raise ResourceNotFoundError("Media", media_id)
 
             await session.delete(row)
             await session.commit()
 
-        logger.info("Deleted image %s", image_id, extra=logger_extra)
+        logger.info("Deleted media %s", media_id, extra=logger_extra)
 
-    async def search_image_by_description(self, description: str) -> ImageRow | None:
-        """Find the most semantically similar image using cosine distance.
+    async def search_media_by_description(self, description: str) -> MediaRow | None:
+        """Find the most semantically similar media using cosine distance.
 
         Args:
-            description: Natural-language description of the desired image.
+            description: Natural-language description of the desired media.
 
         Returns:
-            The best matching ImageRow with all fields loaded, or None if no images exist.
+            The best matching MediaRow with all fields loaded, or None if no media exist.
         """
         query_vec = await self._embeddings.aembed_query(description)
 
         async with AsyncSessionFactory() as session:
             stmt = (
-                select(ImageRow)
-                .where(ImageRow.embedding.isnot(None))
-                .order_by(ImageRow.embedding.cosine_distance(query_vec))
+                select(MediaRow)
+                .where(MediaRow.embedding.isnot(None))
+                .order_by(MediaRow.embedding.cosine_distance(query_vec))
                 .limit(1)
             )
             row = await session.scalar(stmt)

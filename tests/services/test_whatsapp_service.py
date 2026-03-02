@@ -12,10 +12,11 @@ for key, value in DEFAULT_KEYS.items():
 from delpro_backend.services.whatsapp_service import WhatsAppService  # noqa: E402
 
 
-def _make_service(assistant_service=None):
+def _make_service(assistant_service=None, broker_service=None):
     """Create a WhatsAppService with mocked dependencies."""
     return WhatsAppService(
         assistant_service=assistant_service or AsyncMock(),
+        broker_service=broker_service or AsyncMock(),
     )
 
 
@@ -123,7 +124,16 @@ class TestHandleMessage(unittest.IsolatedAsyncioTestCase):
 
         svc = _make_service(assistant_service=mock_assistant)
 
-        with patch("delpro_backend.services.whatsapp_service.send_message", new_callable=AsyncMock) as mock_send:
+        with (
+            patch.object(
+                svc, "extract_information_whatsapp_message",
+                return_value=("msg_123", "Ola", "5511999", "Carlos"),
+            ),
+            patch("delpro_backend.services.whatsapp_service.whatsapp_api") as mock_api,
+        ):
+            mock_api.set_typing_status = AsyncMock()
+            mock_api.send_message = AsyncMock()
+
             body = _make_message_body(phone="5511999", name="Carlos", text="Ola")
             await svc.handle_message(body)
 
@@ -132,7 +142,7 @@ class TestHandleMessage(unittest.IsolatedAsyncioTestCase):
                 user_message="Ola",
                 user_name="Carlos",
             )
-            mock_send.assert_awaited_once_with(
+            mock_api.send_message.assert_awaited_once_with(
                 to="5511999", text="Oi! Como posso ajudar?"
             )
 
@@ -143,10 +153,13 @@ class TestHandleMessage(unittest.IsolatedAsyncioTestCase):
 
         svc = _make_service(assistant_service=mock_assistant)
 
-        body = _make_message_body(phone="123", name="Tester", text="Test")
-        result = await svc.handle_message(body)
+        with patch("delpro_backend.services.whatsapp_service.whatsapp_api") as mock_api:
+            mock_api.set_typing_status = AsyncMock()
 
-        self.assertEqual(result, "Test response")
+            body = _make_message_body(phone="123", name="Tester", text="Test")
+            result = await svc.handle_message(body)
+
+            self.assertEqual(result, "Test response")
 
 
 class TestSignatureRequired(unittest.IsolatedAsyncioTestCase):

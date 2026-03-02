@@ -60,29 +60,33 @@ class TestVectorServiceSemanticSearch(unittest.IsolatedAsyncioTestCase):
 
     @patch("delpro_backend.services.vector_service.AsyncSessionFactory")
     async def test_semantic_search_returns_result(self, mock_factory):
-        """Test that semantic search returns a string result."""
+        """Test that semantic search returns a list of chunk contents."""
         svc, _ = _make_service()
 
         mock_session = AsyncMock()
-        mock_session.scalar.return_value = "Found chunk content"
+        mock_result = MagicMock()
+        mock_result.scalars.return_value.all.return_value = ["Found chunk content"]
+        mock_session.execute.return_value = mock_result
         mock_factory.return_value.__aenter__.return_value = mock_session
 
         result = await svc.semantic_search([0.1] * 3072)
 
-        self.assertEqual(result, "Found chunk content")
+        self.assertEqual(result, ["Found chunk content"])
 
     @patch("delpro_backend.services.vector_service.AsyncSessionFactory")
-    async def test_semantic_search_returns_none_when_empty(self, mock_factory):
-        """Test that semantic search returns None when no chunks exist."""
+    async def test_semantic_search_returns_empty_list_when_no_chunks(self, mock_factory):
+        """Test that semantic search returns empty list when no chunks exist."""
         svc, _ = _make_service()
 
         mock_session = AsyncMock()
-        mock_session.scalar.return_value = None
+        mock_result = MagicMock()
+        mock_result.scalars.return_value.all.return_value = []
+        mock_session.execute.return_value = mock_result
         mock_factory.return_value.__aenter__.return_value = mock_session
 
         result = await svc.semantic_search([0.1] * 3072)
 
-        self.assertIsNone(result)
+        self.assertEqual(result, [])
 
     @patch("delpro_backend.services.vector_service.AsyncSessionFactory")
     async def test_semantic_search_calls_execute(self, mock_factory):
@@ -90,9 +94,26 @@ class TestVectorServiceSemanticSearch(unittest.IsolatedAsyncioTestCase):
         svc, _ = _make_service()
 
         mock_session = AsyncMock()
-        mock_session.scalar.return_value = None
+        mock_result = MagicMock()
+        mock_result.scalars.return_value.all.return_value = []
+        mock_session.execute.return_value = mock_result
         mock_factory.return_value.__aenter__.return_value = mock_session
 
         await svc.semantic_search([0.5] * 3072)
 
-        mock_session.scalar.assert_called_once()
+        mock_session.execute.assert_called_once()
+
+    @patch("delpro_backend.services.vector_service.AsyncSessionFactory")
+    async def test_semantic_search_returns_multiple_results(self, mock_factory):
+        """Test that semantic search returns multiple chunks when top_k > 1."""
+        svc, _ = _make_service()
+
+        mock_session = AsyncMock()
+        mock_result = MagicMock()
+        mock_result.scalars.return_value.all.return_value = ["Chunk 1", "Chunk 2"]
+        mock_session.execute.return_value = mock_result
+        mock_factory.return_value.__aenter__.return_value = mock_session
+
+        result = await svc.semantic_search([0.1] * 3072, top_k=2)
+
+        self.assertEqual(result, ["Chunk 1", "Chunk 2"])

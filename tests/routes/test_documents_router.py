@@ -86,7 +86,7 @@ class TestDocumentsRouterList(unittest.TestCase):
 
     @patch("delpro_backend.routes.v1.documents_router.document_service")
     def test_list_returns_200(self, mock_svc):
-        """Test listing documents returns 200."""
+        """Test listing documents returns 200 with paginated envelope."""
         mock_doc = MagicMock()
         mock_doc.id = "doc-1"
         mock_doc.filename = "test.txt"
@@ -95,19 +95,34 @@ class TestDocumentsRouterList(unittest.TestCase):
         mock_doc.upload_date = "2024-01-01T00:00:00"
         mock_doc.status = "completed"
 
-        mock_svc.list_documents = AsyncMock(return_value=[(mock_doc, 3)])
+        mock_svc.list_documents = AsyncMock(return_value=([(mock_doc, 3)], 1))
 
         response = self.client.get("/documents")
         self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertEqual(body["total"], 1)
+        self.assertEqual(len(body["items"]), 1)
 
     @patch("delpro_backend.routes.v1.documents_router.document_service")
     def test_list_returns_empty_200(self, mock_svc):
-        """Test listing with no documents returns 200 with empty list."""
-        mock_svc.list_documents = AsyncMock(return_value=[])
+        """Test listing with no documents returns 200 with empty paginated envelope."""
+        mock_svc.list_documents = AsyncMock(return_value=([], 0))
 
         response = self.client.get("/documents")
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.json(), [])
+        body = response.json()
+        self.assertEqual(body["items"], [])
+        self.assertEqual(body["total"], 0)
+
+    @patch("delpro_backend.routes.v1.documents_router.document_service")
+    def test_list_pagination_params(self, mock_svc):
+        """Test skip/limit query params are forwarded to service."""
+        mock_svc.list_documents = AsyncMock(return_value=([], 15))
+
+        response = self.client.get("/documents?skip=0&limit=20")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["total"], 15)
+        mock_svc.list_documents.assert_awaited_once_with(skip=0, limit=20)
 
 
 class TestDocumentsRouterGet(unittest.TestCase):
