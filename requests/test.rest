@@ -1,6 +1,6 @@
 @BaseUrl = {{$dotenv BASE_URL}}
 
-@phone-id=
+@phone-id=123
 @test-message = me envie uma foto da piscina do free
 
 ### Send a test WhatsApp message (no signature required)

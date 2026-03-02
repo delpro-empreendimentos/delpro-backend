@@ -53,6 +53,12 @@ export interface Paginated<T> {
   total: number;
 }
 
+export interface ChatMessage {
+  role: 'human' | 'ai' | 'system';
+  content: string;
+  created_at: string;
+}
+
 export type ToastType = 'info' | 'success' | 'error';
 
 export interface ToastMessage {

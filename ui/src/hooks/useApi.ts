@@ -1,7 +1,7 @@
 import { useRef } from 'react';
 import { useDevMode } from '../context/DevModeContext';
 import * as api from '../services/api';
-import type { Broker, BrokerListItem, Document, Media, Paginated, PromptData } from '../types';
+import type { Broker, BrokerListItem, ChatMessage, Document, Media, Paginated, PromptData } from '../types';
 
 function devMediaUrl(id: string): string {
   const seed = id.replace(/^dev-media-[\d]+-/, '') || id;
@@ -211,6 +211,10 @@ export function useApi() {
 
     async deleteBroker(phone: string): Promise<void> {
       return api.deleteBroker(phone);
+    },
+
+    async listBrokerMessages(phone: string, skip = 0, limit = 30): Promise<Paginated<ChatMessage>> {
+      return api.listBrokerMessages(phone, skip, limit);
     },
   });
 

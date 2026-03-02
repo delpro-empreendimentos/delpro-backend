@@ -6,7 +6,7 @@ from sqlalchemy import func, select
 
 from delpro_backend.db.db_service import AsyncSessionFactory
 from delpro_backend.models.v1.broker_models import CreateBrokerRequest, UpdateBrokerRequest
-from delpro_backend.models.v1.database_models import BrokerRow
+from delpro_backend.models.v1.database_models import BrokerRow, MessageRow
 from delpro_backend.models.v1.exception_models import InvalidRequestError, ResourceNotFoundError
 from delpro_backend.utils.logger import get_logger
 
@@ -105,6 +105,23 @@ class BrokerService:
             await session.commit()
 
         logger.info("Deleted broker %s", phone_number, extra=logger_extra)
+
+    async def get_messages(
+        self,
+        phone_number: str,
+        skip: int = 0,
+        limit: int = 30,
+    ) -> tuple[list[MessageRow], int]:
+        """Return paginated chat messages for a broker (newest first)."""
+        async with AsyncSessionFactory() as session:
+            base = select(MessageRow).where(MessageRow.session_id == phone_number)
+
+            count_stmt = select(func.count()).select_from(base.subquery())
+            total: int = (await session.execute(count_stmt)).scalar_one()
+
+            stmt = base.order_by(MessageRow.created_at.desc()).offset(skip).limit(limit)
+            result = await session.execute(stmt)
+            return list(result.scalars().all()), total
 
     async def upsert_from_interaction(self, phone_number: str, name: str) -> BrokerRow:
         """Create or update broker from a WhatsApp interaction.

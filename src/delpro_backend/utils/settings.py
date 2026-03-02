@@ -22,9 +22,9 @@ class Settings(BaseSettings):
 
     # RAG Configuration
     EMBEDDING_MODEL: str
-    CHUNK_SIZE: int = 1200
-    CHUNK_OVERLAP: int = 200
-    RAG_TOP_K: int = 2
+    CHUNK_SIZE: int
+    CHUNK_OVERLAP: int
+    RAG_TOP_K: int
     MAX_FILE_SIZE_MB: int = 10
 
     DATABASE_URL: str

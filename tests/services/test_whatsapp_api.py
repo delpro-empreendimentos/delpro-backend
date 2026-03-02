@@ -187,3 +187,81 @@ class TestUploadMedia(unittest.IsolatedAsyncioTestCase):
                 filename="photo.jpg",
                 phone_number="5511999",
             )
+
+
+class TestSetTypingStatus(unittest.IsolatedAsyncioTestCase):
+    """Tests for WhatsappAPI.set_typing_status."""
+
+    @patch("delpro_backend.services.whatsapp_api.httpx.AsyncClient")
+    async def test_set_typing_status_success(self, mock_client_class):
+        """Test that set_typing_status posts to the right endpoint."""
+        mock_response = MagicMock()
+        mock_response.raise_for_status = MagicMock()
+
+        mock_client = AsyncMock()
+        mock_client.post = AsyncMock(return_value=mock_response)
+        mock_client_class.return_value.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client_class.return_value.__aexit__ = AsyncMock(return_value=False)
+
+        await _api().set_typing_status(whatsapp_message_id="msg-abc-123")
+
+        mock_client.post.assert_awaited_once()
+        call_kwargs = mock_client.post.call_args
+        body = json.loads(call_kwargs[1]["content"])
+        self.assertEqual(body["status"], "read")
+        self.assertEqual(body["message_id"], "msg-abc-123")
+        self.assertEqual(body["messaging_product"], "whatsapp")
+
+    @patch("delpro_backend.services.whatsapp_api.httpx.AsyncClient")
+    async def test_set_typing_status_calls_raise_for_status(self, mock_client_class):
+        """Test that raise_for_status is called."""
+        mock_response = MagicMock()
+        mock_response.raise_for_status = MagicMock()
+
+        mock_client = AsyncMock()
+        mock_client.post = AsyncMock(return_value=mock_response)
+        mock_client_class.return_value.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client_class.return_value.__aexit__ = AsyncMock(return_value=False)
+
+        await _api().set_typing_status("msg-123")
+
+        mock_response.raise_for_status.assert_called_once()
+
+
+class TestSendFormToUser(unittest.IsolatedAsyncioTestCase):
+    """Tests for WhatsappAPI.send_form_to_user."""
+
+    @patch("delpro_backend.services.whatsapp_api.httpx.AsyncClient")
+    async def test_send_form_success(self, mock_client_class):
+        """Test that send_form_to_user posts a template message."""
+        mock_response = MagicMock()
+        mock_response.raise_for_status = MagicMock()
+
+        mock_client = AsyncMock()
+        mock_client.post = AsyncMock(return_value=mock_response)
+        mock_client_class.return_value.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client_class.return_value.__aexit__ = AsyncMock(return_value=False)
+
+        await _api().send_form_to_user(send_phone_number="5511999")
+
+        mock_client.post.assert_awaited_once()
+        call_kwargs = mock_client.post.call_args
+        body = json.loads(call_kwargs[1]["content"])
+        self.assertEqual(body["type"], "template")
+        self.assertEqual(body["to"], "5511999")
+        self.assertEqual(body["template"]["name"], "informacoes_corretor")
+
+    @patch("delpro_backend.services.whatsapp_api.httpx.AsyncClient")
+    async def test_send_form_calls_raise_for_status(self, mock_client_class):
+        """Test that raise_for_status is called for send_form_to_user."""
+        mock_response = MagicMock()
+        mock_response.raise_for_status = MagicMock()
+
+        mock_client = AsyncMock()
+        mock_client.post = AsyncMock(return_value=mock_response)
+        mock_client_class.return_value.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client_class.return_value.__aexit__ = AsyncMock(return_value=False)
+
+        await _api().send_form_to_user("5511999")
+
+        mock_response.raise_for_status.assert_called_once()

@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useApi } from '../hooks/useApi';
 import { useDevMode } from '../context/DevModeContext';
 import { useToast } from '../context/ToastContext';
@@ -9,7 +9,7 @@ import { Modal } from '../components/Modal';
 import { TabPanel } from '../components/TabPanel';
 import { ConfirmDialog } from '../components/ConfirmDialog';
 import { formatDate } from '../utils';
-import type { Broker, BrokerListItem } from '../types';
+import type { Broker, BrokerListItem, ChatMessage } from '../types';
 
 const PAGE_SIZE = 20;
 
@@ -320,10 +320,13 @@ function BrokerDetailModal({
     </>
   );
 
+  const chatTab = <ChatTab phoneNumber={broker.phone_number} />;
+
   return (
     <Modal
       onClose={onClose}
       title="Detalhes do Corretor"
+      maxWidth="900px"
       footer={
         <div className="modal-footer-actions">
           <button className="btn btn-primary" disabled={saving} onClick={handleSave}>
@@ -342,8 +345,126 @@ function BrokerDetailModal({
         tabs={[
           { id: 'profile', label: 'Perfil', content: profileTab },
           { id: 'preferences', label: 'Preferencias', content: preferencesTab },
+          { id: 'chat', label: 'Chat', content: chatTab },
         ]}
       />
     </Modal>
+  );
+}
+
+// ─── Chat Tab ────────────────────────────────────────────────────────────────
+
+const MESSAGES_PAGE_SIZE = 30;
+
+function ChatTab({ phoneNumber }: { phoneNumber: string }) {
+  const api = useApi();
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [total, setTotal] = useState(0);
+  const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const skipRef = useRef(0);
+  const hasMoreRef = useRef(true);
+  const initialScrollDone = useRef(false);
+
+  const loadInitial = useCallback(async () => {
+    try {
+      const result = await api.listBrokerMessages(phoneNumber, 0, MESSAGES_PAGE_SIZE);
+      // API returns newest first, reverse so oldest is at top
+      setMessages(result.items.reverse());
+      setTotal(result.total);
+      skipRef.current = result.items.length;
+      hasMoreRef.current = result.items.length < result.total;
+      setError(null);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Falha ao carregar mensagens');
+    } finally {
+      setLoading(false);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [phoneNumber]);
+
+  useEffect(() => {
+    loadInitial();
+  }, [loadInitial]);
+
+  // Auto-scroll to bottom on initial load
+  useEffect(() => {
+    if (!loading && !initialScrollDone.current && containerRef.current) {
+      containerRef.current.scrollTop = containerRef.current.scrollHeight;
+      initialScrollDone.current = true;
+    }
+  }, [loading, messages.length]);
+
+  const loadMore = useCallback(async () => {
+    if (loadingMore || !hasMoreRef.current) return;
+    setLoadingMore(true);
+    try {
+      const result = await api.listBrokerMessages(phoneNumber, skipRef.current, MESSAGES_PAGE_SIZE);
+      if (result.items.length > 0) {
+        const container = containerRef.current;
+        const prevScrollHeight = container?.scrollHeight ?? 0;
+        // Prepend older messages (they come newest first, so reverse)
+        setMessages((prev) => [...result.items.reverse(), ...prev]);
+        skipRef.current += result.items.length;
+        hasMoreRef.current = skipRef.current < result.total;
+        // Preserve scroll position after prepending
+        requestAnimationFrame(() => {
+          if (container) {
+            container.scrollTop = container.scrollHeight - prevScrollHeight;
+          }
+        });
+      } else {
+        hasMoreRef.current = false;
+      }
+    } catch {
+      // silently ignore load-more errors
+    } finally {
+      setLoadingMore(false);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [phoneNumber, loadingMore]);
+
+  const handleScroll = () => {
+    const container = containerRef.current;
+    if (!container) return;
+    if (container.scrollTop < 60 && hasMoreRef.current && !loadingMore) {
+      loadMore();
+    }
+  };
+
+  if (loading) return <LoadingSpinner message="Carregando mensagens..." />;
+  if (error) return <p style={{ color: 'var(--danger)' }}>{error}</p>;
+  if (messages.length === 0) {
+    return (
+      <div className="chat-empty">
+        <p>Nenhuma mensagem ainda.</p>
+      </div>
+    );
+  }
+
+  const formatTime = (iso: string) => {
+    const d = new Date(iso);
+    return d.toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+  };
+
+  return (
+    <div className="chat-container" ref={containerRef} onScroll={handleScroll}>
+      {loadingMore && (
+        <div className="chat-loading">
+          <div className="chat-loading-spinner" />
+        </div>
+      )}
+      {!hasMoreRef.current && messages.length < total && null}
+      {messages.map((msg, i) => (
+        <div key={i} className={`chat-row ${msg.role === 'human' ? 'chat-row-right' : 'chat-row-left'}`}>
+          <div className={`chat-bubble ${msg.role}`}>
+            <div className="chat-bubble-content">{msg.content}</div>
+            <div className="chat-time">{formatTime(msg.created_at)}</div>
+          </div>
+        </div>
+      ))}
+    </div>
   );
 }

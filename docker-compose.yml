@@ -50,6 +50,16 @@ services:
     logging:
       driver: "none"
 
+  ngrok:
+    image: ngrok/ngrok:latest
+    container_name: ngrok
+    command: http fastapi:8000 --domain unhurt-premorula-myron.ngrok-free.dev
+    environment:
+      NGROK_AUTHTOKEN: ${NGROK_AUTHTOKEN}
+    depends_on:
+      - fastapi
+    restart: unless-stopped
+
   admin:
     build:
       context: ./ui

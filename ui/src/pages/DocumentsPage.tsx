@@ -367,6 +367,7 @@ function DetailModal({
     <Modal
       onClose={onClose}
       title={`${icon.symbol} ${doc.filename}`}
+      maxWidth="900px"
       footer={
         <div className="modal-footer-actions">
           <button className="btn btn-primary" disabled={saving} onClick={handleSave}>

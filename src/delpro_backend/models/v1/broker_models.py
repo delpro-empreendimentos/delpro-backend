@@ -67,3 +67,11 @@ class BrokerListItem(BaseModel):
     date_joined: datetime
     last_message_at: datetime
     sold_delpro_product: bool
+
+
+class MessageResponse(BaseModel):
+    """Single chat message in history response."""
+
+    role: str
+    content: str
+    created_at: datetime

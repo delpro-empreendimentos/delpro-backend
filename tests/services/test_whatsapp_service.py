@@ -106,6 +106,12 @@ class TestExtractInformationWhatsappMessage(unittest.TestCase):
         self.assertEqual(phone, "5522222222222")
         self.assertEqual(name, "Bob")
 
+    def test_extract_returns_empty_strings_on_malformed_body(self):
+        """Test that extract_information returns empty strings for malformed body."""
+        svc = _make_service()
+        result = svc.extract_information_whatsapp_message({"bad": "data"})
+        self.assertEqual(result, ("", "", "", ""))
+
 
 class TestHandleMessage(unittest.IsolatedAsyncioTestCase):
     """Tests for handle_message."""
@@ -116,6 +122,19 @@ class TestHandleMessage(unittest.IsolatedAsyncioTestCase):
         body = {"entry": [{"changes": [{"value": {"statuses": [{"id": "x"}]}}]}]}
         result = await svc.handle_message(body)
         self.assertIsNone(result)
+
+    async def test_returns_empty_string_when_phone_number_empty(self):
+        """Test that empty string is returned when phone extraction fails."""
+        svc = _make_service()
+
+        with patch.object(
+            svc, "is_valid_whatsapp_message", return_value=True
+        ), patch.object(
+            svc, "extract_information_whatsapp_message", return_value=("", "", "", "")
+        ):
+            result = await svc.handle_message({})
+
+        self.assertEqual(result, "")
 
     async def test_processes_valid_message_and_sends_reply(self):
         """Test that a valid message is processed and reply is sent."""
@@ -146,20 +165,25 @@ class TestHandleMessage(unittest.IsolatedAsyncioTestCase):
                 to="5511999", text="Oi! Como posso ajudar?"
             )
 
-    async def test_handle_message_returns_response_for_test_number(self):
-        """Test that response text is returned for the test phone number '123'."""
+    async def test_handle_message_processes_valid_phone_number(self):
+        """Test that a message with a valid phone number is fully processed."""
         mock_assistant = AsyncMock()
         mock_assistant.chat = AsyncMock(return_value="Test response")
 
-        svc = _make_service(assistant_service=mock_assistant)
+        mock_broker_svc = AsyncMock()
+        mock_broker_svc.upsert_from_interaction = AsyncMock()
+
+        svc = _make_service(assistant_service=mock_assistant, broker_service=mock_broker_svc)
 
         with patch("delpro_backend.services.whatsapp_service.whatsapp_api") as mock_api:
             mock_api.set_typing_status = AsyncMock()
+            mock_api.send_message = AsyncMock()
 
-            body = _make_message_body(phone="123", name="Tester", text="Test")
-            result = await svc.handle_message(body)
+            body = _make_message_body(phone="5511999", name="Tester", text="Test")
+            await svc.handle_message(body)
 
-            self.assertEqual(result, "Test response")
+            mock_assistant.chat.assert_awaited_once()
+            mock_api.send_message.assert_awaited_once_with(to="5511999", text="Test response")
 
 
 class TestSignatureRequired(unittest.IsolatedAsyncioTestCase):

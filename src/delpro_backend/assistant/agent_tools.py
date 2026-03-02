@@ -34,17 +34,26 @@ def build_tools(rag_service: RAGService, media_service: MediaService) -> list:
     async def search_knowledge_base(query: str) -> str:
         """Search Delpro's knowledge base for company or property information.
 
-        Use this tool whenever the user asks about Delpro's company information,
-        any development, property details, prices, availability, location,
-        amenities, broker commissions, or anything else specific to Delpro that
-        you do not already know from the conversation. Do not call this function for
-        usual queries, or a normal conversation. Strictly when the user is seeking
-        for information about Delpro.
+        WHEN TO USE THIS TOOL:
+        Only call this tool when the user's CURRENT message explicitly asks for specific
+        information about Delpro or one of its developments. The query MUST be derived
+        solely from the user's current message — NEVER from previous messages or the
+        conversation history.
 
-        POSSIBLE QUERIES:
+        DO NOT call this tool for:
+            - Greetings or small talk (e.g., "oi", "olá", "tudo bem", "obrigado")
+            - Generic questions not related to Delpro (e.g., "me fala sobre imóveis")
+            - Acknowledgements or confirmations (e.g., "entendi", "ok", "certo")
+            - Follow-up messages that do not introduce a new specific question
+            - Any message where the current text alone does not indicate what Delpro
+              information is being requested
+
+        VALID QUERIES — the query argument MUST be one of the following formats exactly,
+        replacing [Building Name] with the name mentioned by the user in their current message:
             - `# Delpro Sobre a empresa:`
             - `# Delpro Missao, visao e valores:`
             - `# Delpro Visao:`
+            - `# Delpro Produtos Lançados:`
             - `# Delpro Contato e localizacao:`
             - `# Delpro Historico e marcos importantes:`
             - `# Delpro Certificacoes e premios:`
@@ -60,30 +69,19 @@ def build_tools(rag_service: RAGService, media_service: MediaService) -> list:
             - `# [Building Name] Status da obra e cronograma:`
             - `# [Building Name] Diferenciais do empreendimento:`
 
-        Replace `[Building Name]` for the building name specified by the user.
+        Queries outside this list are invalid and will return no useful result.
 
-        Valid Building names:
-            - `Free`
-            - `Brisa`
-            - `Olympic`
-            - `Euroville`
-
-        If the user specified asked about a building not listed before, `query` must be set to the
-        exact value: "fallback". This fallback will be hardcoded checked.
-
-        In case of user not knowing the product, but specifing information about it, e.g. address,
-        neighborhood, date of release, search this keyword. As "Bairro: Bairro X", or
-        "Endereço: Av 123".
+        If the user does not know the building name but provides identifying details
+        (address, neighborhood, launch date), use those as the query instead.
+        Example: "Bairro: Passo da Areia" or "Endereco: Av. Joao Wallig".
 
         Args:
-            query: Search terms in Portuguese, following strictly the list of `POSSIBLE QUERIES`.
+            query: A single search string matching one of the VALID QUERIES above,
+                   built from the user's current message only.
 
         Returns:
             Relevant information from the knowledge base, or a message if nothing is found.
         """
-        if query.lower() == "fallback":
-            return "No building with that name."
-
         logger.info("Executing tool search_knowledge_base with query: %s", query)
         result = await rag_service.retrieve_context(query)
         logger.info("Retrieved content: %s", result)
@@ -107,16 +105,6 @@ def build_tools(rag_service: RAGService, media_service: MediaService) -> list:
             - `[Building name] folder`
 
         Replace `[Building Name]` for the building name specified by the user.
-
-        Valid Building Names:
-            - `Free`
-
-        If the user specified asked about a building not listed before, `query` must be set to the
-        exact value: "fallback". This fallback will be hardcoded checked.
-
-        ## Extra capability: When the user asks for general information about a valid building,
-        send all medias in possible queries about this product. First folder, after tabela de vendas
-        then the rest.
 
         Args:
             phone_number: Number of the user to send message (e.g.:+5551912345678)

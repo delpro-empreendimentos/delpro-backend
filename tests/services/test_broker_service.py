@@ -215,3 +215,98 @@ class TestUpsertFromInteraction(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(mock_row.interactions, 4)
         self.assertEqual(mock_row.name, "John")
         mock_session.commit.assert_awaited_once()
+
+    @patch(PATCH_TARGET)
+    async def test_upsert_empty_name_does_not_update_name(self, mock_factory):
+        """Test upsert with empty name does not overwrite broker's name."""
+        mock_row = MagicMock()
+        mock_row.interactions = 2
+        mock_row.name = "ExistingName"
+
+        mock_session = AsyncMock()
+        mock_session.get = AsyncMock(return_value=mock_row)
+        mock_factory.return_value.__aenter__.return_value = mock_session
+
+        svc = BrokerService()
+        await svc.upsert_from_interaction("5511999", "")
+
+        self.assertEqual(mock_row.name, "ExistingName")
+        self.assertEqual(mock_row.interactions, 3)
+
+
+class TestGetMessages(unittest.IsolatedAsyncioTestCase):
+    """Tests for BrokerService.get_messages."""
+
+    @patch(PATCH_TARGET)
+    async def test_get_messages_returns_list_and_total(self, mock_factory):
+        """Test get_messages returns list of messages and total count."""
+        mock_rows = [MagicMock(), MagicMock()]
+        mock_count_result = MagicMock()
+        mock_count_result.scalar_one.return_value = 2
+        mock_data_result = MagicMock()
+        mock_data_result.scalars.return_value.all.return_value = mock_rows
+
+        mock_session = AsyncMock()
+        mock_session.execute = AsyncMock(side_effect=[mock_count_result, mock_data_result])
+        mock_factory.return_value.__aenter__.return_value = mock_session
+
+        svc = BrokerService()
+        rows, total = await svc.get_messages("5511999")
+        self.assertEqual(len(rows), 2)
+        self.assertEqual(total, 2)
+
+    @patch(PATCH_TARGET)
+    async def test_get_messages_empty_returns_zero(self, mock_factory):
+        """Test get_messages returns empty list when no messages."""
+        mock_count_result = MagicMock()
+        mock_count_result.scalar_one.return_value = 0
+        mock_data_result = MagicMock()
+        mock_data_result.scalars.return_value.all.return_value = []
+
+        mock_session = AsyncMock()
+        mock_session.execute = AsyncMock(side_effect=[mock_count_result, mock_data_result])
+        mock_factory.return_value.__aenter__.return_value = mock_session
+
+        svc = BrokerService()
+        rows, total = await svc.get_messages("5511999", skip=0, limit=30)
+        self.assertEqual(rows, [])
+        self.assertEqual(total, 0)
+
+
+class TestListBrokersSearch(unittest.IsolatedAsyncioTestCase):
+    """Tests for BrokerService.list_brokers with search."""
+
+    @patch(PATCH_TARGET)
+    async def test_list_with_search_filters_results(self, mock_factory):
+        """Test listing with search parameter uses ilike filter."""
+        mock_rows = [MagicMock()]
+        mock_count_result = MagicMock()
+        mock_count_result.scalar_one.return_value = 1
+        mock_data_result = MagicMock()
+        mock_data_result.scalars.return_value.all.return_value = mock_rows
+
+        mock_session = AsyncMock()
+        mock_session.execute = AsyncMock(side_effect=[mock_count_result, mock_data_result])
+        mock_factory.return_value.__aenter__.return_value = mock_session
+
+        svc = BrokerService()
+        rows, total = await svc.list_brokers(search="john")
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(total, 1)
+
+    @patch(PATCH_TARGET)
+    async def test_list_with_asc_order(self, mock_factory):
+        """Test listing with ascending order."""
+        mock_count_result = MagicMock()
+        mock_count_result.scalar_one.return_value = 0
+        mock_data_result = MagicMock()
+        mock_data_result.scalars.return_value.all.return_value = []
+
+        mock_session = AsyncMock()
+        mock_session.execute = AsyncMock(side_effect=[mock_count_result, mock_data_result])
+        mock_factory.return_value.__aenter__.return_value = mock_session
+
+        svc = BrokerService()
+        rows, total = await svc.list_brokers(order="asc")
+        self.assertEqual(rows, [])
+        self.assertEqual(total, 0)

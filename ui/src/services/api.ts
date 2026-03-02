@@ -1,4 +1,4 @@
-import type { Broker, BrokerListItem, Document, Media, Paginated, PromptData } from '../types';
+import type { Broker, BrokerListItem, ChatMessage, Document, Media, Paginated, PromptData } from '../types';
 
 const API_BASE = '/api';
 const TIMEOUT_MS = 10000;
@@ -197,4 +197,11 @@ export async function deleteBroker(phone: string): Promise<void> {
     method: 'DELETE',
   });
   if (!res.ok) throw new Error(`Failed to delete broker: ${res.status}`);
+}
+
+export async function listBrokerMessages(phone: string, skip = 0, limit = 30): Promise<Paginated<ChatMessage>> {
+  const params = new URLSearchParams({ skip: String(skip), limit: String(limit) });
+  const res = await fetchWithTimeout(`${API_BASE}/brokers/${encodeURIComponent(phone)}/messages?${params}`);
+  if (!res.ok) throw new Error(`Failed to load messages: ${res.status}`);
+  return res.json();
 }

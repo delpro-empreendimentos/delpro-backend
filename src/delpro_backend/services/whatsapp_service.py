@@ -95,11 +95,9 @@ class WhatsAppService:
             self.extract_information_whatsapp_message(body=body)
         )
 
+        # test only
         if sender_phone_number == "":
-            return
-
-        await whatsapp_api.set_typing_status(message_id)
-        # await whatsapp_api.send_form_to_user(sender_phone_number)
+            return ""
 
         logger.info(
             "Processing message %s from %s (%s)",
@@ -109,17 +107,16 @@ class WhatsAppService:
             extra=logger_extra,
         )
 
-        await self._broker_service.upsert_from_interaction(
-            phone_number=sender_phone_number,
-            name=sender_name,
-        )
-
         response_text = await self._assistant_service.chat(
             sender_phone_number=sender_phone_number,
             user_message=text,
             user_name=sender_name,
         )
 
-        # test only
+        await whatsapp_api.set_typing_status(message_id)
+        await self._broker_service.upsert_from_interaction(
+            phone_number=sender_phone_number,
+            name=sender_name,
+        )
 
         await whatsapp_api.send_message(to=sender_phone_number, text=response_text)

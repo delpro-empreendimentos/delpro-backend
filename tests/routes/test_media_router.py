@@ -262,6 +262,38 @@ class TestMediaRouterUpdate(unittest.TestCase):
         self.assertEqual(response.status_code, 404)
 
 
+class TestMediaRouterReplaceContent(unittest.TestCase):
+    """Tests for PUT /media/{media_id}/content endpoint."""
+
+    def setUp(self):
+        self.client = TestClient(app, raise_server_exceptions=False)
+
+    @patch("delpro_backend.routes.v1.media_router.media_service")
+    def test_replace_content_returns_200(self, mock_svc):
+        """Test replacing media content returns 200."""
+        mock_svc.replace_media_content = AsyncMock(return_value=_make_media_row(filename="new.jpg"))
+
+        response = self.client.put(
+            "/media/media-123/content",
+            files=[("file", ("new.jpg", io.BytesIO(JPEG_BYTES), "image/jpeg"))],
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["filename"], "new.jpg")
+
+    @patch("delpro_backend.routes.v1.media_router.media_service")
+    def test_replace_content_not_found_returns_404(self, mock_svc):
+        """Test replacing content for non-existent media returns 404."""
+        mock_svc.replace_media_content = AsyncMock(
+            side_effect=ResourceNotFoundError("Media", "nonexistent")
+        )
+
+        response = self.client.put(
+            "/media/nonexistent/content",
+            files=[("file", ("photo.jpg", io.BytesIO(JPEG_BYTES), "image/jpeg"))],
+        )
+        self.assertEqual(response.status_code, 404)
+
+
 class TestMediaRouterDelete(unittest.TestCase):
     """Tests for DELETE /media/{media_id} endpoint."""
 

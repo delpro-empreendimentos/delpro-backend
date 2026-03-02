@@ -466,3 +466,237 @@ class TestMediaServiceSearchByDescription(unittest.IsolatedAsyncioTestCase):
 
         # file_content should have been accessed (the _ = row.file_content line)
         self.assertIsNotNone(result)
+
+
+class TestMediaServiceReplaceContent(unittest.IsolatedAsyncioTestCase):
+    """Tests for MediaService.replace_media_content."""
+
+    @patch("delpro_backend.services.media_service.AsyncSessionFactory")
+    async def test_replaces_jpeg_successfully(self, mock_factory):
+        """Test replacing media content with a JPEG succeeds."""
+        svc, _ = _make_service()
+
+        mock_row = MagicMock(spec=MediaRow)
+        mock_session = AsyncMock()
+        mock_session.get.return_value = mock_row
+        mock_session.refresh = AsyncMock(return_value=None)
+        mock_factory.return_value.__aenter__.return_value = mock_session
+
+        mock_file = MagicMock()
+        mock_file.filename = "new_photo.jpg"
+        mock_file.read = AsyncMock(return_value=JPEG_BYTES)
+
+        result = await svc.replace_media_content("media-123", mock_file)
+
+        self.assertEqual(result, mock_row)
+        mock_session.commit.assert_awaited_once()
+
+    @patch("delpro_backend.services.media_service.AsyncSessionFactory")
+    async def test_raises_on_missing_file(self, mock_factory):
+        """Test that MissingParametersRequestError is raised when file is None."""
+        svc, _ = _make_service()
+
+        with self.assertRaises(MissingParametersRequestError):
+            await svc.replace_media_content("media-123", None)
+
+    @patch("delpro_backend.services.media_service.AsyncSessionFactory")
+    async def test_raises_when_not_found(self, mock_factory):
+        """Test that ResourceNotFoundError is raised when media not found."""
+        svc, _ = _make_service()
+
+        mock_session = AsyncMock()
+        mock_session.get.return_value = None
+        mock_factory.return_value.__aenter__.return_value = mock_session
+
+        mock_file = MagicMock()
+        mock_file.filename = "photo.jpg"
+        mock_file.read = AsyncMock(return_value=JPEG_BYTES)
+
+        with self.assertRaises(ResourceNotFoundError):
+            await svc.replace_media_content("nonexistent", mock_file)
+
+    @patch("delpro_backend.services.media_service.AsyncSessionFactory")
+    async def test_raises_on_invalid_type(self, mock_factory):
+        """Test InvalidRequestError for unknown file type."""
+        svc, _ = _make_service()
+
+        mock_file = MagicMock()
+        mock_file.filename = "bad.exe"
+        mock_file.read = AsyncMock(return_value=b"MZ\x90\x00" + b"x" * 100)
+
+        with self.assertRaises(InvalidRequestError):
+            await svc.replace_media_content("media-123", mock_file)
+
+    @patch("delpro_backend.services.media_service._convert_webp_to_jpeg", return_value=JPEG_BYTES)
+    @patch("delpro_backend.services.media_service.AsyncSessionFactory")
+    async def test_replaces_with_webp_converts_to_jpeg(self, mock_factory, mock_convert):
+        """Test that WebP replacement files are converted to JPEG."""
+        svc, _ = _make_service()
+
+        mock_row = MagicMock(spec=MediaRow)
+        mock_session = AsyncMock()
+        mock_session.get.return_value = mock_row
+        mock_session.refresh = AsyncMock(return_value=None)
+        mock_factory.return_value.__aenter__.return_value = mock_session
+
+        mock_file = MagicMock()
+        mock_file.filename = "photo.webp"
+        mock_file.read = AsyncMock(return_value=WEBP_BYTES)
+
+        await svc.replace_media_content("media-123", mock_file)
+
+        mock_convert.assert_called_once_with(WEBP_BYTES)
+
+    @patch("delpro_backend.services.media_service._convert_webp_to_jpeg", return_value=JPEG_BYTES)
+    @patch("delpro_backend.services.media_service.AsyncSessionFactory")
+    async def test_webp_without_extension_still_converts(self, mock_factory, mock_convert):
+        """Test that WebP content without .webp extension still converts."""
+        svc, _ = _make_service()
+
+        mock_row = MagicMock(spec=MediaRow)
+        mock_session = AsyncMock()
+        mock_session.get.return_value = mock_row
+        mock_session.refresh = AsyncMock(return_value=None)
+        mock_factory.return_value.__aenter__.return_value = mock_session
+
+        mock_file = MagicMock()
+        mock_file.filename = "photo.jpg"  # declared as jpg but actually webp
+        mock_file.read = AsyncMock(return_value=WEBP_BYTES)
+
+        await svc.replace_media_content("media-123", mock_file)
+
+        mock_convert.assert_called_once_with(WEBP_BYTES)
+
+    @patch("delpro_backend.services.media_service.AsyncSessionFactory")
+    async def test_raises_on_oversized_replacement(self, mock_factory):
+        """Test that InvalidRequestError is raised when replacement exceeds size limit."""
+        svc, _ = _make_service()
+
+        big_bytes = JPEG_BYTES + b"x" * (6 * 1024 * 1024)
+
+        mock_file = MagicMock()
+        mock_file.filename = "big.jpg"
+        mock_file.read = AsyncMock(return_value=big_bytes)
+
+        with self.assertRaises(InvalidRequestError):
+            await svc.replace_media_content("media-123", mock_file)
+
+
+class TestConvertWebpToJpeg(unittest.TestCase):
+    """Tests for _convert_webp_to_jpeg function."""
+
+    def test_converts_webp_to_jpeg_bytes(self):
+        """Test that _convert_webp_to_jpeg returns JPEG bytes."""
+        from PIL import Image
+        import io
+        from delpro_backend.services.media_service import _convert_webp_to_jpeg
+
+        # Create a real 1x1 WebP image for testing
+        buf = io.BytesIO()
+        img = Image.new("RGB", (1, 1), color=(255, 0, 0))
+        img.save(buf, format="WEBP")
+        webp_bytes = buf.getvalue()
+
+        result = _convert_webp_to_jpeg(webp_bytes)
+
+        self.assertTrue(result.startswith(b"\xff\xd8\xff"))  # JPEG magic bytes
+
+    def test_converts_rgba_webp_to_jpeg(self):
+        """Test that RGBA WebP images are converted correctly (flattened onto white)."""
+        from PIL import Image
+        import io
+        from delpro_backend.services.media_service import _convert_webp_to_jpeg
+
+        buf = io.BytesIO()
+        img = Image.new("RGBA", (1, 1), color=(255, 0, 0, 128))
+        img.save(buf, format="WEBP")
+        webp_bytes = buf.getvalue()
+
+        result = _convert_webp_to_jpeg(webp_bytes)
+        self.assertTrue(result.startswith(b"\xff\xd8\xff"))
+
+
+class TestCreateMediaWebpNoExtension(unittest.IsolatedAsyncioTestCase):
+    """Test WebP conversion in create_media when filename has no .webp extension."""
+
+    @patch("delpro_backend.services.media_service._convert_webp_to_jpeg", return_value=JPEG_BYTES)
+    @patch("delpro_backend.services.media_service.AsyncSessionFactory")
+    async def test_creates_webp_without_webp_extension(self, mock_factory, mock_convert):
+        """Test that WebP content without .webp extension still converts and stores as JPEG."""
+        svc, _ = _make_service()
+
+        mock_session = AsyncMock()
+        mock_session.add = MagicMock()
+        mock_factory.return_value.__aenter__.return_value = mock_session
+
+        mock_file = MagicMock()
+        mock_file.filename = "photo.jpg"  # actual content is webp though
+        mock_file.read = AsyncMock(return_value=WEBP_BYTES)
+
+        result = await svc.create_media(mock_file, "A webp photo stored as jpg")
+
+        mock_convert.assert_called_once_with(WEBP_BYTES)
+        # filename unchanged since it doesn't end with .webp
+        self.assertEqual(result.filename, "photo.jpg")
+
+
+class TestConvertWebpToJpegNonRGB(unittest.TestCase):
+    """Tests for _convert_webp_to_jpeg with grayscale (non-RGBA, non-RGB) mode."""
+
+    def test_converts_grayscale_webp_to_jpeg(self):
+        """Test that grayscale ('L' mode) WebP images are converted to JPEG via RGB."""
+        from PIL import Image
+        import io
+        from delpro_backend.services.media_service import _convert_webp_to_jpeg
+
+        buf = io.BytesIO()
+        img = Image.new("L", (2, 2), color=128)  # grayscale, mode='L'
+        img.save(buf, format="WEBP")
+        webp_bytes = buf.getvalue()
+
+        result = _convert_webp_to_jpeg(webp_bytes)
+        self.assertTrue(result.startswith(b"\xff\xd8\xff"))
+
+
+class TestCreateMediaInvalidType(unittest.IsolatedAsyncioTestCase):
+    """Test create_media with non-WebP unknown file type raises InvalidRequestError."""
+
+    async def test_raises_for_unknown_non_webp_type(self):
+        """Test that unknown non-WebP file type raises InvalidRequestError."""
+        svc, _ = _make_service()
+
+        mock_file = MagicMock()
+        mock_file.filename = "bad.exe"
+        mock_file.read = AsyncMock(return_value=b"MZ\x90\x00" + b"x" * 100)
+
+        with self.assertRaises(InvalidRequestError):
+            await svc.create_media(mock_file, "desc")
+
+
+class TestConvertWebpNonRGBMode(unittest.TestCase):
+    """Tests for _convert_webp_to_jpeg with unusual image modes."""
+
+    def test_converts_non_rgb_non_rgba_mode_to_jpeg(self):
+        """Test that image modes not in RGBA/LA/P and not RGB go through convert('RGB')."""
+        from unittest.mock import MagicMock, patch
+        import io
+        from delpro_backend.services.media_service import _convert_webp_to_jpeg
+
+        # Create a mock image that has mode 'CMYK' (not RGBA/LA/P, not RGB)
+        mock_img = MagicMock()
+        mock_img.mode = "CMYK"
+        mock_img.__enter__ = MagicMock(return_value=mock_img)
+        mock_img.__exit__ = MagicMock(return_value=False)
+
+        rgb_mock = MagicMock()
+        rgb_mock.mode = "RGB"
+        mock_img.convert = MagicMock(return_value=rgb_mock)
+
+        buf = io.BytesIO()
+        rgb_mock.save = MagicMock(side_effect=lambda f, **kw: f.write(b"\xff\xd8\xff\xe0" + b"\x00" * 20))
+
+        with patch("delpro_backend.services.media_service.Image.open", return_value=mock_img):
+            result = _convert_webp_to_jpeg(b"fake data")
+
+        mock_img.convert.assert_called_once_with("RGB")
+        self.assertIsNotNone(result)

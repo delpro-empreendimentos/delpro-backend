@@ -225,3 +225,51 @@ class TestBrokersRouterDelete(unittest.TestCase):
         )
         response = self.client.delete("/brokers/999")
         self.assertEqual(response.status_code, 404)
+
+
+class TestBrokersRouterMessages(unittest.TestCase):
+    """Tests for GET /brokers/{phone_number}/messages endpoint."""
+
+    def setUp(self):
+        """Set up test client."""
+        self.client = TestClient(app, raise_server_exceptions=False)
+
+    def _make_message_row(self, role="human", content="Hello", created_at=None):
+        """Create a MagicMock representing a MessageRow."""
+        import datetime
+        row = MagicMock()
+        row.role = role
+        row.content = content
+        row.created_at = created_at or datetime.datetime(2024, 1, 1, tzinfo=datetime.UTC)
+        return row
+
+    @patch("delpro_backend.routes.v1.brokers_router.broker_service")
+    def test_list_messages_returns_200(self, mock_svc):
+        """Test listing broker messages returns 200 with paginated envelope."""
+        msg = self._make_message_row(role="human", content="Hi there")
+        mock_svc.get_messages = AsyncMock(return_value=([msg], 1))
+        response = self.client.get("/brokers/5511999/messages")
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertEqual(body["total"], 1)
+        self.assertEqual(len(body["items"]), 1)
+        self.assertEqual(body["items"][0]["role"], "human")
+        self.assertEqual(body["items"][0]["content"], "Hi there")
+
+    @patch("delpro_backend.routes.v1.brokers_router.broker_service")
+    def test_list_messages_empty_returns_200(self, mock_svc):
+        """Test listing messages with no results returns empty paginated envelope."""
+        mock_svc.get_messages = AsyncMock(return_value=([], 0))
+        response = self.client.get("/brokers/5511999/messages")
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertEqual(body["items"], [])
+        self.assertEqual(body["total"], 0)
+
+    @patch("delpro_backend.routes.v1.brokers_router.broker_service")
+    def test_list_messages_with_pagination(self, mock_svc):
+        """Test skip/limit query params are forwarded to service."""
+        mock_svc.get_messages = AsyncMock(return_value=([], 50))
+        response = self.client.get("/brokers/5511999/messages?skip=10&limit=20")
+        self.assertEqual(response.status_code, 200)
+        mock_svc.get_messages.assert_awaited_once_with("5511999", skip=10, limit=20)

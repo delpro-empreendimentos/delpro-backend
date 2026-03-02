@@ -91,7 +91,7 @@ class TestSendWhatsappMedia(unittest.IsolatedAsyncioTestCase):
 
         tool, mock_media = self._get_tool(media_results=[mock_item])
 
-        result = await tool.ainvoke({"phone_number": "5511999", "descriptions": ["pool photo"]})
+        result = await tool.ainvoke({"phone_number": "5511999", "queries": ["pool photo"]})
 
         mock_upload.assert_awaited_once_with(
             mock_item.file_content,
@@ -106,7 +106,7 @@ class TestSendWhatsappMedia(unittest.IsolatedAsyncioTestCase):
         """Test that message is returned when no media match."""
         tool, mock_media = self._get_tool(media_results=[None])
 
-        result = await tool.ainvoke({"phone_number": "5511999", "descriptions": ["nothing"]})
+        result = await tool.ainvoke({"phone_number": "5511999", "queries": ["nothing"]})
 
         mock_upload.assert_not_awaited()
         self.assertIn("No matching media found", result)
@@ -122,7 +122,7 @@ class TestSendWhatsappMedia(unittest.IsolatedAsyncioTestCase):
         tool, mock_media = self._get_tool(media_results=[mock_item, None])
 
         result = await tool.ainvoke(
-            {"phone_number": "5511999", "descriptions": ["found desc", "not found desc"]}
+            {"phone_number": "5511999", "queries": ["found desc", "not found desc"]}
         )
 
         mock_upload.assert_awaited_once()
@@ -146,7 +146,7 @@ class TestSendWhatsappMedia(unittest.IsolatedAsyncioTestCase):
         tool, _ = self._get_tool(media_results=[mock_item1, mock_item2])
 
         result = await tool.ainvoke(
-            {"phone_number": "5511999", "descriptions": ["desc1", "desc2"]}
+            {"phone_number": "5511999", "queries": ["desc1", "desc2"]}
         )
 
         self.assertEqual(mock_upload.await_count, 2)

@@ -7,6 +7,7 @@ from delpro_backend.models.v1.broker_models import (
     BrokerListItem,
     BrokerResponse,
     CreateBrokerRequest,
+    MessageResponse,
     UpdateBrokerRequest,
 )
 from delpro_backend.services.broker_service import BrokerService
@@ -93,6 +94,26 @@ async def update_broker(phone_number: str, data: UpdateBrokerRequest):
     """Update broker fields."""
     row = await broker_service.update_broker(phone_number, data)
     return JSONResponse(status_code=status.HTTP_200_OK, content=_row_to_response(row))
+
+
+@brokers_router.get("/{phone_number}/messages")
+@handle_errors
+async def list_broker_messages(
+    phone_number: str,
+    skip: int = Query(default=0, ge=0),
+    limit: int = Query(default=30, ge=1, le=200),
+):
+    """List chat messages for a broker (newest first)."""
+    rows, total = await broker_service.get_messages(phone_number, skip=skip, limit=limit)
+    items = [
+        MessageResponse(
+            role=r.role,
+            content=r.content,
+            created_at=r.created_at,
+        ).model_dump(mode="json")
+        for r in rows
+    ]
+    return JSONResponse(status_code=status.HTTP_200_OK, content={"items": items, "total": total})
 
 
 @brokers_router.delete("/{phone_number}")
