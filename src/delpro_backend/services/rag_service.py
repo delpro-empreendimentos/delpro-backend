@@ -116,20 +116,19 @@ class RAGService:
             logger.exception(f"Failed to process document {document_id}: {e}", extra=logger_extra)
             raise DocumentProcessingError(document_id, str(e)) from e
 
-    async def retrieve_context(self, query: str):
+    async def retrieve_context(self, query: str) -> str | None:
         """Retrieve RAG context using semantic search.
 
         Args:
             query: User query
-            top_k: Number of chunks to retrieve (defaults to RAG_TOP_K)
 
         Returns:
-            Dictionary with context, sources, and chunk_count
+            Combined context from the top-k most relevant chunks, or None if no chunks match.
         """
-        # Generate query embedding
         query_embedding = await self._embeddings.aembed_query(query)
-
-        # Semantic search
-        result = await self._vector_service.semantic_search(query_embedding)
-
-        return result
+        chunks = await self._vector_service.semantic_search(
+            query_embedding, top_k=settings.RAG_TOP_K
+        )
+        if not chunks:
+            return None
+        return "\n\n---\n\n".join(chunks)

@@ -50,6 +50,32 @@ services:
     logging:
       driver: "none"
 
+  ngrok:
+    image: ngrok/ngrok:latest
+    container_name: ngrok
+    command: http fastapi:8000 --domain unhurt-premorula-myron.ngrok-free.dev
+    environment:
+      NGROK_AUTHTOKEN: ${NGROK_AUTHTOKEN}
+    depends_on:
+      - fastapi
+    restart: unless-stopped
+
+  admin:
+    build:
+      context: ./ui
+      dockerfile: Dockerfile
+    container_name: admin
+    ports:
+      - "3000:80"
+    environment:
+      # Local dev (fastapi running on host): host.docker.internal
+      # Full Docker (fastapi in compose):    fastapi
+      FASTAPI_HOST: ${FASTAPI_HOST:-host.docker.internal}
+      FASTAPI_PORT: ${FASTAPI_PORT:-8000}
+    # depends_on:
+    #   - fastapi
+    restart: unless-stopped
+
 volumes:
   pgdata:
   pgadmin_data:

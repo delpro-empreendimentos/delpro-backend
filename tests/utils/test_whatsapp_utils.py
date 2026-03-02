@@ -13,7 +13,7 @@ from delpro_backend.services.whatsapp_service import WhatsAppService  # noqa: E4
 
 
 def _svc():
-    return WhatsAppService(assistant_service=AsyncMock())
+    return WhatsAppService(assistant_service=AsyncMock(), broker_service=AsyncMock())
 
 
 class TestIsValidWhatsappMessage(unittest.TestCase):

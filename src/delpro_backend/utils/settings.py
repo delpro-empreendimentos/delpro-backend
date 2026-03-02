@@ -13,30 +13,25 @@ class Settings(BaseSettings):
 
     # Gemini LangChain
     API_KEY: str
-    # PROJECT_ID: str
     GEMINI_MODEL: str
     MAX_TOKENS: int
-    MAX_TOKENS_SUMMARY: int
     LLM_TEMPERATURE: int
 
     # Chat History
     MAX_HISTORY_MESSAGES: int
 
     # RAG Configuration
-    EMBEDDING_MODEL: str = "models/gemini-embedding-001"
-    CHUNK_SIZE: int = 1200
-    CHUNK_OVERLAP: int = 200
+    EMBEDDING_MODEL: str
+    CHUNK_SIZE: int
+    CHUNK_OVERLAP: int
+    RAG_TOP_K: int
     MAX_FILE_SIZE_MB: int = 10
 
     DATABASE_URL: str
-    REDIS_URL: str = "redis://localhost:6379"
-
-    # LOG_LEVEL: str
 
     # WhatsApp Configuration (optional - set in .env to enable)
     WHATSAPP_ACCESS_TOKEN: str
     WHATSAPP_PHONE_NUMBER_ID: str
-    WHATSAPP_VERIFY_TOKEN: str
     WHATSAPP_APP_SECRET: str
     WHATSAPP_API_VERSION: str
 

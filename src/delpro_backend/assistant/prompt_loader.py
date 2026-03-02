@@ -41,7 +41,20 @@ def build_chat_prompt(filename: str = "prompt.yml") -> ChatPromptTemplate:
     """
     config = load_prompt_config(filename)
     system_prompt = config.get("system_prompt", "You are a helpful assistant.")
+    return build_chat_prompt_from_text(system_prompt)
 
+
+def build_chat_prompt_from_text(system_prompt: str) -> ChatPromptTemplate:
+    """Build a LangChain ChatPromptTemplate from a raw system prompt string.
+
+    Use this when the prompt is loaded from the database rather than a YAML file.
+
+    Args:
+        system_prompt: The system prompt text.
+
+    Returns:
+        A configured ChatPromptTemplate.
+    """
     return ChatPromptTemplate.from_messages(
         [
             ("system", system_prompt),

@@ -1,4 +1,4 @@
-"""Tests for the builders module (get_llm, get_summary_llm)."""
+"""Tests for the builders module (get_llm, get_embeddings)."""
 
 import os
 import threading
@@ -86,75 +86,58 @@ class TestGetLLM(unittest.TestCase):
             self.assertIs(result, mock_instance)
 
 
-class TestGetSummaryLLM(unittest.TestCase):
-    """Tests for get_summary_llm function."""
+class TestGetEmbeddings(unittest.TestCase):
+    """Tests for get_embeddings function."""
 
     def setUp(self):
         """Reset the singleton before each test."""
-        builders_module._summary_llm = None
+        builders_module._embeddings = None
 
-    @patch("delpro_backend.utils.builders.ChatGoogleGenerativeAI")
-    def test_creates_summary_llm_on_first_call(self, mock_chat_google):
-        """Test that get_summary_llm creates a new LLM instance on first call."""
-        mock_instance = MagicMock(spec=ChatGoogleGenerativeAI)
-        mock_chat_google.return_value = mock_instance
+    @patch("delpro_backend.utils.builders.GoogleGenerativeAIEmbeddings")
+    def test_creates_embeddings_on_first_call(self, mock_embeddings_cls):
+        """Test that get_embeddings creates a new instance on first call."""
+        mock_instance = MagicMock()
+        mock_embeddings_cls.return_value = mock_instance
 
-        result = builders_module.get_summary_llm()
+        result = builders_module.get_embeddings()
 
-        mock_chat_google.assert_called_once()
+        mock_embeddings_cls.assert_called_once()
         self.assertEqual(result, mock_instance)
 
-    @patch("delpro_backend.utils.builders.ChatGoogleGenerativeAI")
-    def test_returns_cached_summary_llm_on_subsequent_calls(self, mock_chat_google):
-        """Test that get_summary_llm returns cached instance on subsequent calls."""
-        mock_instance = MagicMock(spec=ChatGoogleGenerativeAI)
-        mock_chat_google.return_value = mock_instance
+    @patch("delpro_backend.utils.builders.GoogleGenerativeAIEmbeddings")
+    def test_returns_cached_embeddings_on_subsequent_calls(self, mock_embeddings_cls):
+        """Test that get_embeddings returns cached instance on subsequent calls."""
+        mock_instance = MagicMock()
+        mock_embeddings_cls.return_value = mock_instance
 
-        result1 = builders_module.get_summary_llm()
-        result2 = builders_module.get_summary_llm()
+        result1 = builders_module.get_embeddings()
+        result2 = builders_module.get_embeddings()
 
-        mock_chat_google.assert_called_once()
+        mock_embeddings_cls.assert_called_once()
         self.assertIs(result1, result2)
 
-    @patch("delpro_backend.utils.builders.ChatGoogleGenerativeAI")
-    @patch("delpro_backend.utils.builders.settings")
-    def test_uses_max_tokens_summary_setting(self, mock_settings, mock_chat_google):
-        """Test that get_summary_llm uses MAX_TOKENS_SUMMARY instead of MAX_TOKENS."""
-        mock_settings.GEMINI_MODEL = "gemini-2.0-flash"
-        mock_settings.API_KEY = "test-api-key"
-        mock_settings.LLM_TEMPERATURE = 0
-        mock_settings.MAX_TOKENS_SUMMARY = 2000
-
-        mock_instance = MagicMock(spec=ChatGoogleGenerativeAI)
-        mock_chat_google.return_value = mock_instance
-
-        builders_module.get_summary_llm()
-
-        call_kwargs = mock_chat_google.call_args[1]
-        self.assertEqual(call_kwargs["max_tokens"], 2000)
-
-    @patch("delpro_backend.utils.builders.ChatGoogleGenerativeAI")
-    def test_thread_safe_summary_singleton(self, mock_chat_google):
-        """Test that get_summary_llm is thread-safe and only creates one instance."""
-        mock_instance = MagicMock(spec=ChatGoogleGenerativeAI)
+    @patch("delpro_backend.utils.builders.GoogleGenerativeAIEmbeddings")
+    def test_thread_safe_embeddings_singleton(self, mock_embeddings_cls):
+        """Test that get_embeddings is thread-safe and only creates one instance."""
+        mock_instance = MagicMock()
 
         def create_with_delay(*args, **kwargs):
             time.sleep(0.01)
             return mock_instance
 
-        mock_chat_google.side_effect = create_with_delay
+        mock_embeddings_cls.side_effect = create_with_delay
 
         results = []
 
-        def call_get_summary_llm():
-            results.append(builders_module.get_summary_llm())
+        def call_get_embeddings():
+            results.append(builders_module.get_embeddings())
 
-        threads = [threading.Thread(target=call_get_summary_llm) for _ in range(5)]
+        threads = [threading.Thread(target=call_get_embeddings) for _ in range(5)]
         for t in threads:
             t.start()
         for t in threads:
             t.join()
 
-        self.assertEqual(mock_chat_google.call_count, 1)
+        self.assertEqual(mock_embeddings_cls.call_count, 1)
         for result in results:
             self.assertIs(result, mock_instance)

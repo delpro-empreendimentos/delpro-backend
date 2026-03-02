@@ -20,9 +20,11 @@ def _make_service():
     mock_llm = MagicMock()
     mock_llm.bind_tools.return_value = MagicMock()
     mock_rag = MagicMock()
-    mock_image = MagicMock()
+    mock_media = MagicMock()
     with patch("delpro_backend.assistant.assistant_service.build_tools", return_value=[]):
-        return AssistantService(rag_service=mock_rag, llm=mock_llm, image_service=mock_image)
+        return AssistantService(
+            rag_service=mock_rag, llm=mock_llm, media_service=mock_media
+        )
 
 
 class TestAssistantServiceGetSessionHistory(unittest.TestCase):
@@ -163,6 +165,57 @@ class TestAssistantServiceExecuteTools(unittest.IsolatedAsyncioTestCase):
         self.assertIn("result_b", contents)
 
 
+class TestLoadPromptTemplate(unittest.IsolatedAsyncioTestCase):
+    """Tests for _load_prompt_template."""
+
+    async def test_loads_from_db_when_row_exists(self):
+        """When a PromptRow exists, build prompt from its content."""
+        svc = _make_service()
+
+        mock_row = MagicMock()
+        mock_row.content = "Custom system prompt"
+
+        mock_session = AsyncMock()
+        mock_session.get = AsyncMock(return_value=mock_row)
+        mock_ctx = AsyncMock()
+        mock_ctx.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_ctx.__aexit__ = AsyncMock(return_value=False)
+
+        with (
+            patch("delpro_backend.assistant.assistant_service.AsyncSessionFactory", return_value=mock_ctx),
+            patch(
+                "delpro_backend.assistant.assistant_service.build_chat_prompt_from_text"
+            ) as mock_from_text,
+            patch("delpro_backend.assistant.assistant_service.build_chat_prompt") as mock_yaml,
+        ):
+            await svc._load_prompt_template()
+
+        mock_from_text.assert_called_once_with("Custom system prompt")
+        mock_yaml.assert_not_called()
+
+    async def test_falls_back_to_yaml_when_no_row(self):
+        """When no PromptRow exists, fall back to build_chat_prompt (YAML)."""
+        svc = _make_service()
+
+        mock_session = AsyncMock()
+        mock_session.get = AsyncMock(return_value=None)
+        mock_ctx = AsyncMock()
+        mock_ctx.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_ctx.__aexit__ = AsyncMock(return_value=False)
+
+        with (
+            patch("delpro_backend.assistant.assistant_service.AsyncSessionFactory", return_value=mock_ctx),
+            patch(
+                "delpro_backend.assistant.assistant_service.build_chat_prompt_from_text"
+            ) as mock_from_text,
+            patch("delpro_backend.assistant.assistant_service.build_chat_prompt") as mock_yaml,
+        ):
+            await svc._load_prompt_template()
+
+        mock_yaml.assert_called_once()
+        mock_from_text.assert_not_called()
+
+
 class TestAssistantServiceChat(unittest.IsolatedAsyncioTestCase):
     """Tests for AssistantService.chat."""
 
@@ -177,15 +230,17 @@ class TestAssistantServiceChat(unittest.IsolatedAsyncioTestCase):
         mock_prompt_value = MagicMock()
         mock_prompt_value.to_messages.return_value = [HumanMessage(content="hi")]
 
-        svc._get_session_history = MagicMock(return_value=mock_history)
-        svc._prompt_template = AsyncMock()
-        svc._prompt_template.ainvoke = AsyncMock(return_value=mock_prompt_value)
+        mock_prompt_template = AsyncMock()
+        mock_prompt_template.ainvoke = AsyncMock(return_value=mock_prompt_value)
 
-        return svc, svc._llm_with_tools, mock_history
+        svc._get_session_history = MagicMock(return_value=mock_history)
+        svc._load_prompt_template = AsyncMock(return_value=mock_prompt_template)
+
+        return svc, svc._llm_with_tools, mock_history, mock_prompt_template
 
     async def test_chat_no_tool_calls_returns_text(self):
         """When LLM returns no tool_calls, extract text and save history."""
-        svc, mock_llm_with_tools, mock_history = self._make_service_with_mocks()
+        svc, mock_llm_with_tools, mock_history, _ = self._make_service_with_mocks()
 
         ai_response = MagicMock(spec=AIMessage)
         ai_response.content = "Hello!"
@@ -203,7 +258,7 @@ class TestAssistantServiceChat(unittest.IsolatedAsyncioTestCase):
 
     async def test_chat_with_tool_calls_does_round2(self):
         """When LLM returns tool_calls, execute tools then call LLM again."""
-        svc, mock_llm_with_tools, mock_history = self._make_service_with_mocks()
+        svc, mock_llm_with_tools, mock_history, _ = self._make_service_with_mocks()
 
         ai_round1 = MagicMock(spec=AIMessage)
         ai_round1.content = ""
@@ -231,7 +286,7 @@ class TestAssistantServiceChat(unittest.IsolatedAsyncioTestCase):
 
     async def test_chat_saves_human_and_ai_messages(self):
         """Verify that both HumanMessage and AIMessage are saved after no-tool response."""
-        svc, mock_llm_with_tools, mock_history = self._make_service_with_mocks()
+        svc, mock_llm_with_tools, mock_history, _ = self._make_service_with_mocks()
 
         ai_response = MagicMock(spec=AIMessage)
         ai_response.content = "My answer"
@@ -251,7 +306,7 @@ class TestAssistantServiceChat(unittest.IsolatedAsyncioTestCase):
 
     async def test_chat_with_existing_history(self):
         """Chat should load and pass existing history to the prompt."""
-        svc, mock_llm_with_tools, mock_history = self._make_service_with_mocks()
+        svc, mock_llm_with_tools, mock_history, mock_prompt_template = self._make_service_with_mocks()
 
         existing = [HumanMessage(content="old"), AIMessage(content="old reply")]
         mock_history.aget_messages = AsyncMock(return_value=existing)
@@ -264,5 +319,7 @@ class TestAssistantServiceChat(unittest.IsolatedAsyncioTestCase):
         result = await svc.chat("999", "New question", "Dave")
 
         self.assertEqual(result, "New answer")
-        prompt_call = svc._prompt_template.ainvoke.call_args[0][0]
+        prompt_call = mock_prompt_template.ainvoke.call_args[0][0]
         self.assertEqual(prompt_call["history"], existing)
+
+

@@ -66,19 +66,21 @@ class VectorService:
 
         return len(chunks)
 
-    async def semantic_search(self, query_embedding: list[float]) -> str | None:
-        """Return the most similar chunk content using cosine distance.
+    async def semantic_search(self, query_embedding: list[float], top_k: int = 1) -> list[str]:
+        """Return the most similar chunk contents using cosine distance.
 
         Args:
             query_embedding: The query embedding vector.
+            top_k: Maximum number of chunks to return.
 
         Returns:
-            The content of the most similar chunk, or None if no chunks exist.
+            List of chunk contents ordered by similarity (closest first).
         """
         async with AsyncSessionFactory() as session:
             stmt = (
                 select(ChunkRow.content)
                 .order_by(ChunkRow.embedding.cosine_distance(query_embedding))
-                .limit(1)
+                .limit(top_k)
             )
-            return await session.scalar(stmt)
+            result = await session.execute(stmt)
+            return list(result.scalars().all())

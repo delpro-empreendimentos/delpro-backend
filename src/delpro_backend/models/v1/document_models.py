@@ -53,6 +53,18 @@ class GetDocumentResponse(BaseModel):
     chunks_preview: list[str] = Field(max_length=3)
 
 
+class UpdateDocumentContentRequest(BaseModel):
+    """Request body for PUT /documents/{id}/content."""
+
+    content: str = Field(min_length=1)
+
+
+class UpdateDocumentMetadataRequest(BaseModel):
+    """Request body for PUT /documents/{id}."""
+
+    filename: str | None = Field(default=None, min_length=1, max_length=255)
+
+
 class DeleteDocumentResponse(BaseModel):
     """Response after deleting a document."""
 

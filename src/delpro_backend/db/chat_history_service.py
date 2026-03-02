@@ -76,64 +76,6 @@ class PostgresChatMessageHistory(BaseChatMessageHistory):
         """Sync access not supported -- use aget_messages."""
         raise NotImplementedError("Use aget_messages() in async context.")
 
-    # --- Summarization (disabled) ---
-    # To enable: uncomment _asummarize_old_messages, add the fire-and-forget
-    # call in aadd_messages, and restore imports (asyncio, DbService,
-    # get_summary_llm, get_summary_prompt).
-    #
-    # async def _asummarize_old_messages(self) -> None:
-    #     """Summarize and replace old messages with a SystemMessage.
-
-    #     This method runs asynchronously in the background (fire-and-forget).
-    #     It fetches old messages, generates a summary using LLM, and replaces
-    #     them with a single SystemMessage.
-
-    #     Error handling: All exceptions are caught and logged. Failures do not
-    #     propagate to avoid disrupting the main flow.
-    #     """
-    #     try:
-    #         # Fetch and delete old messages
-    #         old_messages = await db_service.fetch_and_delete_old_messages(
-    #             self._session_id, settings.MAX_HISTORY_MESSAGES
-    #         )
-
-    #         if not old_messages:
-    #             return  # Nothing to summarize
-
-    #         # Generate summary with LLM (using summary-specific config)
-    #         llm = get_summary_llm()
-    #         summary_prompt = get_summary_prompt(old_messages)
-    #         response = await llm.ainvoke(summary_prompt)
-
-    #         # Extract text from response
-    #         if hasattr(response, "content"):
-    #             content = response.content
-    #             if isinstance(content, list) and len(content) > 0:
-    #                 first_item = content[0]
-    #                 if isinstance(first_item, dict):
-    #                     summary_text = first_item.get("text", str(content))
-    #                 else:
-    #                     summary_text = str(first_item)
-    #             elif isinstance(content, str):
-    #                 summary_text = content
-    #             else:
-    #                 summary_text = str(content)
-    #         else:
-    #             summary_text = str(response)
-
-    #         # Insert summary message
-    #         await db_service.insert_summary_message(self._session_id, summary_text)
-
-    #         logger.info("Successfully summarized messages for session %s", self._session_id)
-
-    #     except Exception as e:
-    #         logger.exception(
-    #             "Failed to generate summary for session %s: %s",
-    #             self._session_id,
-    #             str(e),
-    #         )
-    #         # Do not propagate - this is a background task
-
     async def aget_messages(self) -> list[BaseMessage]:
         """Load the last N messages for this session, ordered by creation time."""
         async with self._async_session_factory() as session:
@@ -158,9 +100,6 @@ class PostgresChatMessageHistory(BaseChatMessageHistory):
                 )
                 session.add(row)
             await session.commit()
-
-        # To enable summarization, uncomment:
-        # asyncio.create_task(self._asummarize_old_messages())
 
     def clear(self) -> None:
         """Sync clear not supported -- use aclear."""

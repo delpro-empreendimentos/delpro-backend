@@ -1,11 +1,13 @@
 """Router for document CRUD operations."""
 
-from fastapi import APIRouter, Response, UploadFile, status
+from fastapi import APIRouter, Query, Response, UploadFile, status
 from fastapi.responses import JSONResponse
 
 from delpro_backend.models.v1.document_models import (
     DocumentListItem,
     GetDocumentResponse,
+    UpdateDocumentContentRequest,
+    UpdateDocumentMetadataRequest,
 )
 from delpro_backend.services.document_service import DocumentService
 from delpro_backend.services.rag_service import RAGService
@@ -47,13 +49,16 @@ async def upload_documents(files: list[UploadFile]):
 
 @documents_router.get("")
 @handle_errors
-async def list_documents():
-    """List all uploaded documents with metadata.
+async def list_documents(
+    skip: int = Query(default=0, ge=0),
+    limit: int = Query(default=20, ge=1, le=200),
+):
+    """List uploaded documents with metadata and pagination.
 
     Returns:
-        List of documents with chunk counts
+        Paginated list of documents with chunk counts
     """
-    docs_with_counts = await document_service.list_documents()
+    docs_with_counts, total = await document_service.list_documents(skip=skip, limit=limit)
 
     documents = [
         DocumentListItem(
@@ -68,7 +73,9 @@ async def list_documents():
         for doc, count in docs_with_counts
     ]
 
-    return JSONResponse(status_code=status.HTTP_200_OK, content=documents)
+    return JSONResponse(
+        status_code=status.HTTP_200_OK, content={"items": documents, "total": total}
+    )
 
 
 @documents_router.get("/{document_id}")
@@ -96,6 +103,71 @@ async def get_document(document_id: str):
         status=doc.status,
         chunk_count=len(chunks),
         chunks_preview=chunks_preview,
+    )
+
+
+@documents_router.get("/{document_id}/content")
+@handle_errors
+async def get_document_content(document_id: str):
+    """Return raw document bytes for preview/download.
+
+    Args:
+        document_id: The document ID
+
+    Returns:
+        Raw file bytes with correct Content-Type.
+    """
+    file_bytes, content_type, filename = await document_service.get_document_content(document_id)
+
+    return Response(
+        content=file_bytes,
+        media_type=content_type,
+        headers={"Content-Disposition": f'inline; filename="{filename}"'},
+    )
+
+
+@documents_router.put("/{document_id}/content")
+@handle_errors
+async def update_document_content(document_id: str, data: UpdateDocumentContentRequest):
+    """Update the text content of a document.
+
+    Args:
+        document_id: The document ID
+        data: Request body with new text content
+
+    Returns:
+        Updated document metadata.
+    """
+    new_bytes = data.content.encode("utf-8")
+    doc = await document_service.update_document_content(document_id, new_bytes)
+
+    return JSONResponse(
+        status_code=status.HTTP_200_OK,
+        content={
+            "id": doc.id,
+            "filename": doc.filename,
+            "file_size_bytes": doc.file_size_bytes,
+        },
+    )
+
+
+@documents_router.put("/{document_id}")
+@handle_errors
+async def update_document(document_id: str, data: UpdateDocumentMetadataRequest):
+    """Update document metadata (filename).
+
+    Args:
+        document_id: The document ID
+        data: Request body with fields to update
+
+    Returns:
+        Updated document metadata.
+    """
+    doc = await document_service.update_document_metadata(document_id, data)
+
+    return JSONResponse(
+        status_code=status.HTTP_200_OK,
+        content={"id": doc.id, "filename": doc.filename},
     )
 
 

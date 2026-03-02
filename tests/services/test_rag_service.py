@@ -149,7 +149,7 @@ class TestRAGServiceRetrieveContext(unittest.IsolatedAsyncioTestCase):
 
     async def test_retrieve_context_generates_embedding_and_calls_search(self):
         """Test that query embedding is generated and semantic search called."""
-        svc, mock_embeddings, mock_vector = _make_rag_service(vector_result="Found content")
+        svc, mock_embeddings, mock_vector = _make_rag_service(vector_result=["Found content"])
 
         result = await svc.retrieve_context("test query")
 
@@ -159,8 +159,16 @@ class TestRAGServiceRetrieveContext(unittest.IsolatedAsyncioTestCase):
 
     async def test_retrieve_context_returns_none_when_empty(self):
         """Test that None is returned when no chunks found."""
-        svc, _, mock_vector = _make_rag_service(vector_result=None)
+        svc, _, mock_vector = _make_rag_service(vector_result=[])
 
         result = await svc.retrieve_context("no match query")
 
         self.assertIsNone(result)
+
+    async def test_retrieve_context_joins_multiple_chunks(self):
+        """Test that multiple chunks are joined with separator."""
+        svc, _, _ = _make_rag_service(vector_result=["Chunk A", "Chunk B"])
+
+        result = await svc.retrieve_context("test query")
+
+        self.assertEqual(result, "Chunk A\n\n---\n\nChunk B")

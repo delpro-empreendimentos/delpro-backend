@@ -86,7 +86,7 @@ class TestDocumentsRouterList(unittest.TestCase):
 
     @patch("delpro_backend.routes.v1.documents_router.document_service")
     def test_list_returns_200(self, mock_svc):
-        """Test listing documents returns 200."""
+        """Test listing documents returns 200 with paginated envelope."""
         mock_doc = MagicMock()
         mock_doc.id = "doc-1"
         mock_doc.filename = "test.txt"
@@ -95,19 +95,34 @@ class TestDocumentsRouterList(unittest.TestCase):
         mock_doc.upload_date = "2024-01-01T00:00:00"
         mock_doc.status = "completed"
 
-        mock_svc.list_documents = AsyncMock(return_value=[(mock_doc, 3)])
+        mock_svc.list_documents = AsyncMock(return_value=([(mock_doc, 3)], 1))
 
         response = self.client.get("/documents")
         self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertEqual(body["total"], 1)
+        self.assertEqual(len(body["items"]), 1)
 
     @patch("delpro_backend.routes.v1.documents_router.document_service")
     def test_list_returns_empty_200(self, mock_svc):
-        """Test listing with no documents returns 200 with empty list."""
-        mock_svc.list_documents = AsyncMock(return_value=[])
+        """Test listing with no documents returns 200 with empty paginated envelope."""
+        mock_svc.list_documents = AsyncMock(return_value=([], 0))
 
         response = self.client.get("/documents")
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.json(), [])
+        body = response.json()
+        self.assertEqual(body["items"], [])
+        self.assertEqual(body["total"], 0)
+
+    @patch("delpro_backend.routes.v1.documents_router.document_service")
+    def test_list_pagination_params(self, mock_svc):
+        """Test skip/limit query params are forwarded to service."""
+        mock_svc.list_documents = AsyncMock(return_value=([], 15))
+
+        response = self.client.get("/documents?skip=0&limit=20")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["total"], 15)
+        mock_svc.list_documents.assert_awaited_once_with(skip=0, limit=20)
 
 
 class TestDocumentsRouterGet(unittest.TestCase):
@@ -170,4 +185,109 @@ class TestDocumentsRouterDelete(unittest.TestCase):
         )
 
         response = self.client.delete("/documents/nonexistent")
+        self.assertEqual(response.status_code, 404)
+
+
+class TestDocumentsRouterGetContent(unittest.TestCase):
+    """Tests for GET /documents/{id}/content endpoint."""
+
+    def setUp(self):
+        self.client = TestClient(app, raise_server_exceptions=False)
+
+    @patch("delpro_backend.routes.v1.documents_router.document_service")
+    def test_get_content_returns_bytes(self, mock_svc):
+        """Test that document content is returned as bytes with correct content-type."""
+        mock_svc.get_document_content = AsyncMock(
+            return_value=(b"hello world", "text/plain", "doc.txt")
+        )
+
+        response = self.client.get("/documents/doc-123/content")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.content, b"hello world")
+
+    @patch("delpro_backend.routes.v1.documents_router.document_service")
+    def test_get_content_not_found_returns_404(self, mock_svc):
+        """Test that getting content for non-existent document returns 404."""
+        mock_svc.get_document_content = AsyncMock(
+            side_effect=ResourceNotFoundError("Document", "nonexistent")
+        )
+
+        response = self.client.get("/documents/nonexistent/content")
+        self.assertEqual(response.status_code, 404)
+
+
+class TestDocumentsRouterUpdateContent(unittest.TestCase):
+    """Tests for PUT /documents/{id}/content endpoint."""
+
+    def setUp(self):
+        self.client = TestClient(app, raise_server_exceptions=False)
+
+    @patch("delpro_backend.routes.v1.documents_router.document_service")
+    def test_update_content_returns_200(self, mock_svc):
+        """Test updating document content returns 200."""
+        mock_doc = MagicMock()
+        mock_doc.id = "doc-123"
+        mock_doc.filename = "updated.txt"
+        mock_doc.file_size_bytes = 12
+        mock_svc.update_document_content = AsyncMock(return_value=mock_doc)
+
+        response = self.client.put(
+            "/documents/doc-123/content",
+            json={"content": "new content"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertEqual(body["id"], "doc-123")
+        self.assertEqual(body["filename"], "updated.txt")
+
+    @patch("delpro_backend.routes.v1.documents_router.document_service")
+    def test_update_content_not_found_returns_404(self, mock_svc):
+        """Test updating content for non-existent document returns 404."""
+        mock_svc.update_document_content = AsyncMock(
+            side_effect=ResourceNotFoundError("Document", "nonexistent")
+        )
+
+        response = self.client.put(
+            "/documents/nonexistent/content",
+            json={"content": "new content"},
+        )
+        self.assertEqual(response.status_code, 404)
+
+
+class TestDocumentsRouterUpdateMetadata(unittest.TestCase):
+    """Tests for PUT /documents/{id} endpoint."""
+
+    def setUp(self):
+        self.client = TestClient(app, raise_server_exceptions=False)
+
+    @patch("delpro_backend.routes.v1.documents_router.document_service")
+    def test_update_metadata_returns_200(self, mock_svc):
+        """Test updating document metadata returns 200."""
+        mock_doc = MagicMock()
+        mock_doc.id = "doc-123"
+        mock_doc.filename = "new_name.txt"
+        mock_svc.update_document_metadata = AsyncMock(return_value=mock_doc)
+
+        response = self.client.put(
+            "/documents/doc-123",
+            json={"filename": "new_name.txt"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertEqual(body["filename"], "new_name.txt")
+
+    @patch("delpro_backend.routes.v1.documents_router.document_service")
+    def test_update_metadata_not_found_returns_404(self, mock_svc):
+        """Test updating metadata for non-existent document returns 404."""
+        mock_svc.update_document_metadata = AsyncMock(
+            side_effect=ResourceNotFoundError("Document", "nonexistent")
+        )
+
+        response = self.client.put(
+            "/documents/nonexistent",
+            json={"filename": "x.txt"},
+        )
         self.assertEqual(response.status_code, 404)

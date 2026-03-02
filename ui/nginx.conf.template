@@ -1,0 +1,36 @@
+server {
+    listen 80;
+    server_name localhost;
+    root /usr/share/nginx/html;
+    index index.html;
+
+    location /api/documents {
+        proxy_pass http://${FASTAPI_HOST}:${FASTAPI_PORT}/documents;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        client_max_body_size 20M;
+    }
+
+    location /api/media {
+        proxy_pass http://${FASTAPI_HOST}:${FASTAPI_PORT}/media;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        client_max_body_size 25M;
+    }
+
+    location /api/prompt {
+        proxy_pass http://${FASTAPI_HOST}:${FASTAPI_PORT}/prompt;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+    }
+
+    location /api/brokers {
+        proxy_pass http://${FASTAPI_HOST}:${FASTAPI_PORT}/brokers;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+    }
+
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+}

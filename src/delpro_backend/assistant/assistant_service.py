@@ -3,17 +3,21 @@
 import asyncio
 
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
+from langchain_core.prompts import ChatPromptTemplate
 from langchain_google_genai import ChatGoogleGenerativeAI
 
 from delpro_backend.assistant.agent_tools import build_tools
-from delpro_backend.assistant.prompt_loader import build_chat_prompt
+from delpro_backend.assistant.prompt_loader import build_chat_prompt, build_chat_prompt_from_text
 from delpro_backend.db.chat_history_service import PostgresChatMessageHistory
 from delpro_backend.db.db_service import AsyncSessionFactory
-from delpro_backend.services.image_service import ImageService
+from delpro_backend.models.v1.database_models import PromptRow
+from delpro_backend.services.media_service import MediaService
 from delpro_backend.services.rag_service import RAGService
 from delpro_backend.utils.logger import get_logger
 
 logger = get_logger(__name__)
+
+_PROMPT_ID = "main"
 
 
 class AssistantService:
@@ -24,20 +28,23 @@ class AssistantService:
     """
 
     def __init__(
-        self, rag_service: RAGService, llm: ChatGoogleGenerativeAI, image_service: ImageService
+        self,
+        rag_service: RAGService,
+        llm: ChatGoogleGenerativeAI,
+        media_service: MediaService,
     ):
         """Initialize AssistantService with dependencies.
 
         Args:
             rag_service: Service for RAG context retrieval.
-            llm: LLM model for generating responses.
-            image_service: Service for image CRUD and catalog.
+            llm: Primary LLM model for generating responses.
+            media_service: Service for media CRUD and catalog.
+            fallback_llm: Optional fallback LLM used when the primary hits quota limits.
         """
         self._rag_service = rag_service
-        self._image_service = image_service
+        self._media_service = media_service
         self._llm = llm
-        self._prompt_template = build_chat_prompt()
-        tools = build_tools(self._rag_service, self._image_service)
+        tools = build_tools(self._rag_service, self._media_service)
         self._llm_with_tools = self._llm.bind_tools(tools)
         self._tools_by_name = {t.name: t for t in tools}
 
@@ -54,6 +61,24 @@ class AssistantService:
             session_id=session_id,
             async_session_factory=AsyncSessionFactory,
         )
+
+    async def _load_prompt_template(self) -> ChatPromptTemplate:
+        """Load the system prompt from the database, falling back to YAML.
+
+        Queries the ``agent_prompt`` table for the row with id='main'.
+        If no row exists, falls back to the YAML-based prompt.
+
+        Returns:
+            A ChatPromptTemplate with the current system prompt.
+        """
+        async with AsyncSessionFactory() as session:
+            row = await session.get(PromptRow, _PROMPT_ID)
+
+        if row is not None:
+            return build_chat_prompt_from_text(row.content)
+
+        logger.info("No prompt row in DB, falling back to prompt.yml")
+        return build_chat_prompt()
 
     @staticmethod
     def _extract_text(response) -> str:
@@ -145,8 +170,11 @@ class AssistantService:
         history_store = self._get_session_history(sender_phone_number)
         history_messages = await history_store.aget_messages()
 
-        # 2. Build prompt messages (system + history + current input)
-        prompt_value = await self._prompt_template.ainvoke(
+        # 2. Load prompt from DB (falls back to YAML if no DB row)
+        prompt_template = await self._load_prompt_template()
+
+        # 3. Build prompt messages (system + history + current input)
+        prompt_value = await prompt_template.ainvoke(
             {
                 "input": user_message,
                 "user_name": user_name,
@@ -156,7 +184,7 @@ class AssistantService:
         )
         messages = prompt_value.to_messages()
 
-        # 4. Round 1: invoke LLM with tools bound
+        # 4. Round 1: invoke LLM with tools bound (fallback on quota exhaustion)
         response = await self._llm_with_tools.ainvoke(messages)
 
         # 5. If no tool calls, return the text directly
@@ -177,7 +205,11 @@ class AssistantService:
         messages.append(response)  # AIMessage with tool_calls
         messages.extend(tool_messages)  # ToolMessages with results
 
-        final_response = await self._llm_with_tools.ainvoke(messages)
+        # Use the same LLM that succeeded in round 1 for round 2
+        active_llm = self._llm_with_tools
+
+        final_response = await active_llm.ainvoke(messages)
+
         final_text = self._extract_text(final_response)
 
         # 8. Save only clean messages to history
