@@ -57,16 +57,6 @@ jobs:
           echo "${{ secrets.PROD_VM_HOST_KEY }}" >> ~/.ssh/known_hosts
           chmod 600 ~/.ssh/known_hosts
 
-      - name: Write .env to VM
-        env:
-          PROD_VM_HOST: ${{ secrets.PROD_VM_HOST }}
-          PROD_VM_USER: ${{ secrets.PROD_VM_USER }}
-          APP_DIR: ${{ secrets.APP_DIR }}
-          PROD_ENV_FILE: ${{ secrets.PROD_ENV_FILE }}
-        run: |
-          ssh -i ~/.ssh/id_ed25519 "${PROD_VM_USER}@${PROD_VM_HOST}" \
-            "cat > '${APP_DIR}/.env'" <<< "${PROD_ENV_FILE}"
-
       - name: Deploy on VM
         env:
           PROD_VM_HOST: ${{ secrets.PROD_VM_HOST }}
