@@ -1,6 +1,5 @@
 """WhatsApp webhook router for handling incoming messages and verification."""
 
-import time
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Query, status
@@ -61,10 +60,6 @@ async def receive_message(
     body: Annotated[dict, Depends(whatsapp_service.signature_required)],
 ) -> Response:
     """POST /webhook - Handle incoming WhatsApp messages."""
-    before = time.time()
-
     await whatsapp_service.handle_message(body)
-
-    logger.info(f"Time elapsed: {time.time() - before}")
 
     return Response(status_code=status.HTTP_200_OK)

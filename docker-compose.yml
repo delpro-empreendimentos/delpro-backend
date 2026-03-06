@@ -1,23 +1,23 @@
 services:
-  fastapi:
+  backend:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: fastapi
+    container_name: backend
     env_file:
       - .env
     environment:
       # Override DATABASE_URL to use docker network hostname
-      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
     ports:
       - "8000:8000"
     depends_on:
-      - postgres
+      - db
     restart: unless-stopped
 
-  postgres:
+  db:
     image: pgvector/pgvector:pg16
-    container_name: postgres
+    container_name: db
     environment:
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
@@ -36,8 +36,8 @@ services:
     environment:
       PGADMIN_DEFAULT_EMAIL: ${PGADMIN_DEFAULT_EMAIL}
       PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_DEFAULT_PASSWORD}
-      PGADMIN_CONFIG_SERVER_MODE: "False"
-      PGADMIN_CONFIG_MASTER_PASSWORD_REQUIRED: "False"
+      PGADMIN_CONFIG_SERVER_MODE: "True"
+      PGADMIN_CONFIG_MASTER_PASSWORD_REQUIRED: "True"
     ports:
       - "5050:80"
     volumes:
@@ -45,35 +45,23 @@ services:
       - ./pgadmin-servers.json:/pgadmin4/servers.json:ro
       - ./pgpass:/pgpass:ro
     depends_on:
-      - postgres
+      - db
     restart: unless-stopped
     logging:
       driver: "none"
 
-  ngrok:
-    image: ngrok/ngrok:latest
-    container_name: ngrok
-    command: http fastapi:8000 --domain unhurt-premorula-myron.ngrok-free.dev
-    environment:
-      NGROK_AUTHTOKEN: ${NGROK_AUTHTOKEN}
-    depends_on:
-      - fastapi
-    restart: unless-stopped
-
-  admin:
+  frontend:
     build:
       context: ./ui
       dockerfile: Dockerfile
-    container_name: admin
+    container_name: frontend
     ports:
       - "3000:80"
     environment:
-      # Local dev (fastapi running on host): host.docker.internal
-      # Full Docker (fastapi in compose):    fastapi
-      FASTAPI_HOST: ${FASTAPI_HOST:-host.docker.internal}
-      FASTAPI_PORT: ${FASTAPI_PORT:-8000}
-    # depends_on:
-    #   - fastapi
+      FASTAPI_HOST: backend
+      FASTAPI_PORT: 8000
+    depends_on:
+      - backend
     restart: unless-stopped
 
 volumes:

@@ -95,6 +95,10 @@ class WhatsAppService:
             self.extract_information_whatsapp_message(body=body)
         )
 
+        if text == "/reset chat":
+            #resetar chat
+            print("")
+
         # test only
         if sender_phone_number == "":
             return ""
