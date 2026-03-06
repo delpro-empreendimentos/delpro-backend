@@ -4,10 +4,12 @@ on:
   push:
     branches:
       - prod
+  workflow_dispatch:
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    environment: production
 
     steps:
       - name: Checkout repository
@@ -28,13 +30,17 @@ jobs:
         env:
           PROD_VM_HOST: ${{ secrets.PROD_VM_HOST }}
           PROD_VM_USER: ${{ secrets.PROD_VM_USER }}
-          APP_DIR: ${{ vars.APP_DIR }}
-          PROJECT_NAME: ${{ vars.PROJECT_NAME }}
-          PROJECT_ID: ${{ vars.PROJECT_ID }}
         run: |
-          ssh "${PROD_VM_USER}@${PROD_VM_HOST}" << EOF
+          ssh "${PROD_VM_USER}@${PROD_VM_HOST}" << 'EOF'
             set -Eeuo pipefail
-            echo "Deploying ${PROJECT_NAME} (${PROJECT_ID})"
+
             cd "${APP_DIR}"
-            ./scripts/deploy_prod.sh
+
+            git fetch origin prod
+            git checkout prod
+            git reset --hard origin/prod
+
+            docker compose config > /dev/null
+            docker compose up -d --build --remove-orphans
+            docker compose ps
           EOF
