@@ -34,6 +34,7 @@ class Settings(BaseSettings):
     WHATSAPP_PHONE_NUMBER_ID: str
     WHATSAPP_APP_SECRET: str
     WHATSAPP_API_VERSION: str
+    WHATSAPP_VERIFY_TOKEN: str
 
     ALLOWED_FILE_TYPES: list[str] = ["application/pdf", "text/plain"]
     MAX_FILES_PER_UPLOAD: int = 5

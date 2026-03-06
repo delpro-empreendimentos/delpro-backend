@@ -3,7 +3,7 @@
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Query, status
-from fastapi.responses import JSONResponse, Response
+from fastapi.responses import PlainTextResponse, Response
 
 from delpro_backend.assistant.assistant_service import AssistantService
 from delpro_backend.models.v1.exception_models import WebhookValidationError
@@ -48,9 +48,9 @@ async def validate_webhook(
 ):
     """GET /webhook - Verify endpoint for WhatsApp."""
     if (mode is not None and token is not None) and (
-        mode == "subscribe" and token == settings.WHATSAPP_ACCESS_TOKEN
+        mode == "subscribe" and token == settings.WHATSAPP_VERIFY_TOKEN
     ):
-        return JSONResponse(content=challenge or "", status_code=200)
+        return PlainTextResponse(content=challenge or "", status_code=200)
     raise WebhookValidationError("Webhook verification failed")
 
 
