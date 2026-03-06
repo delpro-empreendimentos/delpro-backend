@@ -16,7 +16,7 @@ DEFAULT_KEYS = {
     # WhatsApp Configuration
     "WHATSAPP_ACCESS_TOKEN": "test-token",
     "WHATSAPP_PHONE_NUMBER_ID": "test-phone-id",
-    "WHATSAPP_VERIFY_TOKEN": "test-verify-token",
+    "WHATSAPP_VERIFY_TOKEN": "token",
     "WHATSAPP_APP_SECRET": "test-app-secret",
     "WHATSAPP_API_VERSION": "v21.0",
     "WHATSAPP_RECIPIENT_WAID": "test-recipient",

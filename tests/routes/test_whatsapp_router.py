@@ -63,12 +63,12 @@ class TestWebhookValidation(unittest.TestCase):
             "/webhook",
             params={
                 "hub.mode": "subscribe",
-                "hub.verify_token": "test-token",
+                "hub.verify_token": "token",
                 "hub.challenge": "my-challenge",
             },
         )
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.json(), "my-challenge")
+        self.assertEqual(response.content, b"my-challenge")
 
     def test_invalid_token_returns_422(self):
         """Test that wrong verify_token returns 422."""
@@ -83,7 +83,7 @@ class TestWebhookValidation(unittest.TestCase):
         self.assertEqual(response.status_code, 422)
 
     def test_missing_params_returns_422(self):
-        """Test that missing query params returns 422 (all None -> raises WebhookValidationError)."""
+        """Test that missing query params returns 422 (all None ->raises WebhookValidationError)."""
         response = self.client.get("/webhook")
         self.assertEqual(response.status_code, 422)
 
