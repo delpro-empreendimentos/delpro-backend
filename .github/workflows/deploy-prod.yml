@@ -15,14 +15,11 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Load SSH key
-        uses: webfactory/ssh-agent@v0.9.0
-        with:
-          ssh-private-key: ${{ secrets.PROD_VM_SSH_KEY }}
-
-      - name: Trust VM host key
+      - name: Setup SSH key
         run: |
           mkdir -p ~/.ssh
+          echo "${{ secrets.PROD_VM_SSH_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
           echo "${{ secrets.PROD_VM_HOST_KEY }}" >> ~/.ssh/known_hosts
           chmod 600 ~/.ssh/known_hosts
 
@@ -30,11 +27,13 @@ jobs:
         env:
           PROD_VM_HOST: ${{ secrets.PROD_VM_HOST }}
           PROD_VM_USER: ${{ secrets.PROD_VM_USER }}
+          APP_DIR: ${{ secrets.APP_DIR }}
         run: |
-          ssh "${PROD_VM_USER}@${PROD_VM_HOST}" << 'EOF'
+          ssh -i ~/.ssh/id_ed25519 "${PROD_VM_USER}@${PROD_VM_HOST}" "
             set -Eeuo pipefail
 
-            cd "${APP_DIR}"
+            echo 'Deploying in ${APP_DIR}'
+            cd '${APP_DIR}'
 
             git fetch origin prod
             git checkout prod
@@ -43,4 +42,4 @@ jobs:
             docker compose config > /dev/null
             docker compose up -d --build --remove-orphans
             docker compose ps
-          EOF
+          "
