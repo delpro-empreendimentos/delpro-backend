@@ -1,0 +1,40 @@
+name: Deploy production backend
+
+on:
+  push:
+    branches:
+      - prod
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Load SSH key
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.PROD_VM_SSH_KEY }}
+
+      - name: Trust VM host key
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.PROD_VM_HOST_KEY }}" >> ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+
+      - name: Deploy on VM
+        env:
+          PROD_VM_HOST: ${{ secrets.PROD_VM_HOST }}
+          PROD_VM_USER: ${{ secrets.PROD_VM_USER }}
+          APP_DIR: ${{ vars.APP_DIR }}
+          PROJECT_NAME: ${{ vars.PROJECT_NAME }}
+          PROJECT_ID: ${{ vars.PROJECT_ID }}
+        run: |
+          ssh "${PROD_VM_USER}@${PROD_VM_HOST}" << EOF
+            set -Eeuo pipefail
+            echo "Deploying ${PROJECT_NAME} (${PROJECT_ID})"
+            cd "${APP_DIR}"
+            ./scripts/deploy_prod.sh
+          EOF
