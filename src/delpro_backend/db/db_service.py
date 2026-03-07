@@ -23,6 +23,7 @@ engine: AsyncEngine = create_async_engine(
     max_overflow=20,
     pool_pre_ping=True,
     pool_recycle=3600,
+    connect_args={"ssl": False},
 )
 
 AsyncSessionFactory = async_sessionmaker(
