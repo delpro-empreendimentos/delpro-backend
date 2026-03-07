@@ -3,7 +3,7 @@ name: Deploy production backend
 on:
   push:
     branches:
-      - prod
+      - main
   workflow_dispatch:
 
 jobs:
