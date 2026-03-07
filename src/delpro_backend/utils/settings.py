@@ -43,7 +43,7 @@ class Settings(BaseSettings):
     DEV_TUNNEL_URL: str = ""
     DEV_INTERNAL_TOKEN: str = ""
 
-    DEV_PHONE: str = "5551991751193"
+    DEV_PHONE: str = "555191751193"
 
 
 settings = Settings()  # type: ignore
