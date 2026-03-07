@@ -1,5 +1,7 @@
 """Pre-processing logic for incoming WhatsApp webhook payloads."""
 
+import json
+
 import httpx
 from fastapi import BackgroundTasks
 from fastapi.responses import Response
@@ -25,15 +27,30 @@ class WebhookPreProcessingService:
 
     async def process(self, body: dict, background_tasks: BackgroundTasks) -> Response:
         """Process a verified webhook payload from WhatsApp Cloud API."""
+        logger.info("Received this payload: %s", json.dumps(body), extra=logger_extra)
+
         message_id, text, sender_phone_number, sender_name = (
             self._whatsapp_api.extract_information_whatsapp_message(body=body)
         )
+
+        logger.info(
+            "Was a valid message!: %s, %s, %s, %s",
+            message_id,
+            text,
+            sender_phone_number,
+            sender_name,
+            extra=logger_extra,
+        )
+
+        # TODO: validate what is true message and what is not
 
         if sender_phone_number == settings.DEV_PHONE:
             return await self._handle_dev_message(
                 body=body,
                 text=text,
                 sender_phone_number=sender_phone_number,
+                sender_name=sender_name,
+                background_tasks=background_tasks,
             )
 
         # await self._whatsapp_api.set_typing_status(message_id)
@@ -47,9 +64,14 @@ class WebhookPreProcessingService:
         return Response(status_code=status.HTTP_200_OK)
 
     async def _handle_dev_message(
-        self, body: dict, text: str, sender_phone_number: str
+        self,
+        body: dict,
+        text: str,
+        sender_name: str,
+        sender_phone_number: str,
+        background_tasks: BackgroundTasks,
     ) -> Response:
-        if text == "/dev toggle":
+        if text == "/dev":
             active = dev_state.toggle()
 
             status_msg = (
@@ -68,6 +90,14 @@ class WebhookPreProcessingService:
                     headers={"X-Dev-Token": settings.DEV_INTERNAL_TOKEN},
                     timeout=30,
                 )
+                return Response(status_code=status.HTTP_200_OK)
+
+        background_tasks.add_task(
+            self._whatsapp_service.handle_message,
+            sender_name=sender_name,
+            sender_phone_number=sender_phone_number,
+            text=text,
+        )
 
         return Response(status_code=status.HTTP_200_OK)
 
