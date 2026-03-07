@@ -20,4 +20,5 @@ DEFAULT_KEYS = {
     "WHATSAPP_APP_SECRET": "test-app-secret",
     "WHATSAPP_API_VERSION": "v21.0",
     "WHATSAPP_RECIPIENT_WAID": "test-recipient",
+    "DEV_INTERNAL_TOKEN": "dev-secret",
 }

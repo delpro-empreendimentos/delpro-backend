@@ -117,11 +117,16 @@ class TestWebhookReceiveMessage(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200)
 
-    @patch("delpro_backend.routes.v1.whatsapp_router.whatsapp_service")
-    def test_handle_message_called_with_body(self, mock_svc):
-        """Test that handle_message is called with the parsed body."""
+    @patch("delpro_backend.routes.v1.whatsapp_router.preprocessing_service")
+    def test_preprocessing_service_process_called(self, mock_preprocessing):
+        """Test that preprocessing_service.process is called with body and background_tasks."""
+        from fastapi import Response
+        from starlette import status
+
         body = _valid_wpp_body()
-        mock_svc.handle_message = AsyncMock(return_value=None)
+        mock_preprocessing.process = AsyncMock(
+            return_value=Response(status_code=status.HTTP_200_OK)
+        )
 
         async def _fake_sig():
             return body
@@ -134,4 +139,40 @@ class TestWebhookReceiveMessage(unittest.TestCase):
             headers={"Content-Type": "application/json"},
         )
 
-        mock_svc.handle_message.assert_awaited_once_with(body)
+        mock_preprocessing.process.assert_awaited_once()
+
+
+class TestWebhookDevEndpoint(unittest.TestCase):
+    """Tests for POST /webhook/dev endpoint."""
+
+    def setUp(self):
+        self.client = TestClient(app, raise_server_exceptions=False)
+
+    def test_dev_endpoint_rejects_bad_token(self):
+        """Returns 403 when X-Dev-Token header is wrong."""
+        response = self.client.post(
+            "/webhook/dev",
+            json=_valid_wpp_body(),
+            headers={"X-Dev-Token": "wrong-token"},
+        )
+        self.assertEqual(response.status_code, 403)
+
+    @patch("delpro_backend.routes.v1.whatsapp_router.preprocessing_service")
+    def test_dev_endpoint_accepts_valid_token(self, mock_preprocessing):
+        """Returns 200 when X-Dev-Token matches DEV_INTERNAL_TOKEN."""
+        from fastapi import Response
+        from starlette import status as http_status
+
+        from delpro_backend.utils.settings import settings
+
+        mock_preprocessing.process_dev = AsyncMock(
+            return_value=Response(status_code=http_status.HTTP_200_OK)
+        )
+
+        response = self.client.post(
+            "/webhook/dev",
+            json=_valid_wpp_body(),
+            headers={"X-Dev-Token": settings.DEV_INTERNAL_TOKEN},
+        )
+        self.assertEqual(response.status_code, 200)
+        mock_preprocessing.process_dev.assert_awaited_once()
