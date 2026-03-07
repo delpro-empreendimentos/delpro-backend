@@ -33,6 +33,13 @@ class WebhookPreProcessingService:
             self._whatsapp_api.extract_information_whatsapp_message(body=body)
         )
 
+        if not message_id:
+            logger.debug(
+                "Skipping non-message webhook (status update or unsupported type)",
+                extra=logger_extra,
+            )
+            return Response(status_code=status.HTTP_200_OK)
+
         logger.info(
             "Was a valid message!: %s, %s, %s, %s",
             message_id,
