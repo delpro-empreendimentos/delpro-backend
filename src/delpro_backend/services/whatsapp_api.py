@@ -56,8 +56,10 @@ class WhatsappAPI:
 
         if mime_type == "application/pdf":
             await self.send_message(
-                to=phone_number, msg_type="document",
-                media_id=media_id, filename=filename,
+                to=phone_number,
+                msg_type="document",
+                media_id=media_id,
+                filename=filename,
             )
         else:
             await self.send_message(to=phone_number, msg_type="image", media_id=media_id)
@@ -144,6 +146,35 @@ class WhatsappAPI:
             # logger.info(
             #     "Typing status set to message: %s", whatsapp_message_id, extra=_logger_extra
             # )
+
+    def extract_information_whatsapp_message(self, body: dict) -> tuple[str, str, str, str]:
+        """Extract message information from a WhatsApp webhook payload.
+
+        Args:
+            body: The webhook payload from WhatsApp.
+
+        Returns:
+            A tuple of (message_id, text, sender_phone_number, sender_name).
+        """
+        try:
+            message = body["entry"][0]["changes"][0]["value"]["messages"][0]
+            message_id = message["id"]
+
+            contact = body["entry"][0]["changes"][0]["value"]["contacts"][0]
+            sender_phone_number = contact.get("wa_id") or contact.get("sender_phone_number")
+            sender_name = contact["profile"]["name"]
+            text = message["text"]["body"]
+            return message_id, text, sender_phone_number, sender_name
+        except Exception:
+            return "", "", "", ""
+
+    def is_valid_whatsapp_message(self, body: dict) -> bool:
+        """Check if the incoming webhook event has a valid WhatsApp message structure."""
+        try:
+            message = body["entry"][0]["changes"][0]["value"]["messages"][0]
+            return bool(body.get("object") and message)
+        except (KeyError, IndexError, TypeError):
+            return False
 
     async def send_message(
         self,

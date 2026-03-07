@@ -72,11 +72,11 @@ class TestAssistantServiceExtractText(unittest.TestCase):
         self.assertEqual(AssistantService._extract_text(response), "plain text")
 
     def test_extracts_empty_list(self):
-        """Test extraction from empty list falls back to str."""
+        """Test extraction from empty list returns fallback message."""
         response = MagicMock()
         response.content = []
         result = AssistantService._extract_text(response)
-        self.assertEqual(result, "[]")
+        self.assertEqual(result, "Desculpe, não consegui gerar uma resposta. Pode repetir?")
 
     def test_extracts_non_string_non_list_content(self):
         """Test extraction from non-string, non-list content uses str()."""
@@ -321,5 +321,14 @@ class TestAssistantServiceChat(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result, "New answer")
         prompt_call = mock_prompt_template.ainvoke.call_args[0][0]
         self.assertEqual(prompt_call["history"], existing)
+
+    async def test_clear_history_calls_aclear(self):
+        """clear_history should delegate to the history store's aclear method."""
+        svc, _, mock_history, _ = self._make_service_with_mocks()
+        mock_history.aclear = AsyncMock()
+
+        await svc.clear_history("5511999")
+
+        mock_history.aclear.assert_awaited_once()
 
 
