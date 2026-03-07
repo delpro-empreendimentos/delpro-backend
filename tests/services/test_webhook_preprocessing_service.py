@@ -9,7 +9,9 @@ from tests.keys_test import DEFAULT_KEYS
 for key, value in DEFAULT_KEYS.items():
     os.environ.setdefault(key, value)
 
-from delpro_backend.services.webhook_preprocessing_service import WebhookPreProcessingService  # noqa: E402
+from delpro_backend.services.webhook_preprocessing_service import (
+    WebhookPreProcessingService,  # noqa: E402
+)
 
 
 def _valid_body():
@@ -44,7 +46,10 @@ class TestProcess(unittest.IsolatedAsyncioTestCase):
         """Non-DEV_PHONE messages are dispatched as background tasks."""
         mock_api = MagicMock()
         mock_api.extract_information_whatsapp_message.return_value = (
-            "msg1", "Ola", "5511999", "Alice"
+            "msg1",
+            "Ola",
+            "5511999",
+            "Alice",
         )
         mock_api.set_typing_status = AsyncMock()
         mock_svc = MagicMock()
@@ -52,7 +57,9 @@ class TestProcess(unittest.IsolatedAsyncioTestCase):
 
         mock_bg = MagicMock()
 
-        with patch("delpro_backend.services.webhook_preprocessing_service.settings") as mock_settings:
+        with patch(
+            "delpro_backend.services.webhook_preprocessing_service.settings"
+        ) as mock_settings:
             mock_settings.DEV_PHONE = "9999999999"
             response = await svc.process(_valid_body(), mock_bg)
 
@@ -60,10 +67,13 @@ class TestProcess(unittest.IsolatedAsyncioTestCase):
         mock_bg.add_task.assert_called_once()
 
     async def test_dev_phone_toggle_activates_dev_mode(self):
-        """DEV_PHONE + /dev toggle activates dev mode and sends status message."""
+        """DEV_PHONE + /dev activates dev mode and sends status message."""
         mock_api = MagicMock()
         mock_api.extract_information_whatsapp_message.return_value = (
-            "msg1", "/dev toggle", "5511111", "Dev"
+            "msg1",
+            "/dev",
+            "5511111",
+            "Dev",
         )
         mock_api.send_message = AsyncMock()
         svc = _make_service(whatsapp_api=mock_api)
@@ -71,7 +81,9 @@ class TestProcess(unittest.IsolatedAsyncioTestCase):
         mock_bg = MagicMock()
 
         with (
-            patch("delpro_backend.services.webhook_preprocessing_service.settings") as mock_settings,
+            patch(
+                "delpro_backend.services.webhook_preprocessing_service.settings"
+            ) as mock_settings,
             patch("delpro_backend.services.webhook_preprocessing_service.dev_state") as mock_dev,
         ):
             mock_settings.DEV_PHONE = "5511111"
@@ -86,10 +98,13 @@ class TestProcess(unittest.IsolatedAsyncioTestCase):
         mock_api.send_message.assert_awaited_once()
 
     async def test_dev_phone_toggle_deactivates_dev_mode(self):
-        """DEV_PHONE + /dev toggle deactivates dev mode and sends OFF message."""
+        """DEV_PHONE + /dev deactivates dev mode and sends OFF message."""
         mock_api = MagicMock()
         mock_api.extract_information_whatsapp_message.return_value = (
-            "msg1", "/dev toggle", "5511111", "Dev"
+            "msg1",
+            "/dev",
+            "5511111",
+            "Dev",
         )
         mock_api.send_message = AsyncMock()
         svc = _make_service(whatsapp_api=mock_api)
@@ -97,7 +112,9 @@ class TestProcess(unittest.IsolatedAsyncioTestCase):
         mock_bg = MagicMock()
 
         with (
-            patch("delpro_backend.services.webhook_preprocessing_service.settings") as mock_settings,
+            patch(
+                "delpro_backend.services.webhook_preprocessing_service.settings"
+            ) as mock_settings,
             patch("delpro_backend.services.webhook_preprocessing_service.dev_state") as mock_dev,
         ):
             mock_settings.DEV_PHONE = "5511111"
@@ -115,16 +132,23 @@ class TestProcess(unittest.IsolatedAsyncioTestCase):
         """DEV_PHONE with active dev mode forwards request to tunnel URL."""
         mock_api = MagicMock()
         mock_api.extract_information_whatsapp_message.return_value = (
-            "msg1", "Hello", "5511111", "Dev"
+            "msg1",
+            "Hello",
+            "5511111",
+            "Dev",
         )
         svc = _make_service(whatsapp_api=mock_api)
 
         mock_bg = MagicMock()
 
         with (
-            patch("delpro_backend.services.webhook_preprocessing_service.settings") as mock_settings,
+            patch(
+                "delpro_backend.services.webhook_preprocessing_service.settings"
+            ) as mock_settings,
             patch("delpro_backend.services.webhook_preprocessing_service.dev_state") as mock_dev,
-            patch("delpro_backend.services.webhook_preprocessing_service.httpx.AsyncClient") as mock_client_cls,
+            patch(
+                "delpro_backend.services.webhook_preprocessing_service.httpx.AsyncClient"
+            ) as mock_client_cls,
         ):
             mock_settings.DEV_PHONE = "5511111"
             mock_settings.DEV_TUNNEL_URL = "https://tunnel.example.com"
@@ -144,16 +168,23 @@ class TestProcess(unittest.IsolatedAsyncioTestCase):
         """DEV_PHONE with inactive dev mode does NOT forward."""
         mock_api = MagicMock()
         mock_api.extract_information_whatsapp_message.return_value = (
-            "msg1", "Hello", "5511111", "Dev"
+            "msg1",
+            "Hello",
+            "5511111",
+            "Dev",
         )
         svc = _make_service(whatsapp_api=mock_api)
 
         mock_bg = MagicMock()
 
         with (
-            patch("delpro_backend.services.webhook_preprocessing_service.settings") as mock_settings,
+            patch(
+                "delpro_backend.services.webhook_preprocessing_service.settings"
+            ) as mock_settings,
             patch("delpro_backend.services.webhook_preprocessing_service.dev_state") as mock_dev,
-            patch("delpro_backend.services.webhook_preprocessing_service.httpx.AsyncClient") as mock_client_cls,
+            patch(
+                "delpro_backend.services.webhook_preprocessing_service.httpx.AsyncClient"
+            ) as mock_client_cls,
         ):
             mock_settings.DEV_PHONE = "5511111"
             mock_settings.DEV_TUNNEL_URL = "https://tunnel.example.com"
@@ -172,7 +203,10 @@ class TestProcessDev(unittest.IsolatedAsyncioTestCase):
         """process_dev dispatches handle_message as a background task and returns 200."""
         mock_api = MagicMock()
         mock_api.extract_information_whatsapp_message.return_value = (
-            "msg1", "Hi", "5511999", "Bob"
+            "msg1",
+            "Hi",
+            "5511999",
+            "Bob",
         )
         mock_api.set_typing_status = AsyncMock()
         mock_svc = MagicMock()
