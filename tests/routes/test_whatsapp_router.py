@@ -98,11 +98,16 @@ class TestWebhookReceiveMessage(unittest.TestCase):
         """Clear dependency overrides after each test."""
         app.dependency_overrides.clear()
 
-    @patch("delpro_backend.routes.v1.whatsapp_router.whatsapp_service")
-    def test_valid_message_returns_200(self, mock_svc):
+    @patch("delpro_backend.routes.v1.whatsapp_router.preprocessing_service")
+    def test_valid_message_returns_200(self, mock_preprocessing):
         """Test that a valid signed message returns 200."""
+        from fastapi import Response
+        from starlette import status
+
         body = _valid_wpp_body()
-        mock_svc.handle_message = AsyncMock(return_value=None)
+        mock_preprocessing.process = AsyncMock(
+            return_value=Response(status_code=status.HTTP_200_OK)
+        )
 
         async def _fake_sig():
             return body

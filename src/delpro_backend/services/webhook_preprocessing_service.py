@@ -36,11 +36,12 @@ class WebhookPreProcessingService:
                 sender_phone_number=sender_phone_number,
             )
 
+        await self._whatsapp_api.set_typing_status(message_id)
+
         background_tasks.add_task(
             self._whatsapp_service.handle_message,
             sender_name=sender_name,
             sender_phone_number=sender_phone_number,
-            message_id=message_id,
             text=text,
         )
         return Response(status_code=status.HTTP_200_OK)
@@ -76,11 +77,12 @@ class WebhookPreProcessingService:
             self._whatsapp_api.extract_information_whatsapp_message(body=body)
         )
 
+        await self._whatsapp_api.set_typing_status(message_id)
+
         background_tasks.add_task(
             self._whatsapp_service.handle_message,
             sender_name=sender_name,
             sender_phone_number=sender_phone_number,
-            message_id=message_id,
             text=text,
         )
 
