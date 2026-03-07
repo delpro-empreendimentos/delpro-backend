@@ -52,7 +52,7 @@ class WhatsAppService:
         return json.loads(payload)
 
     async def handle_message(
-        self, message_id: str, text: str, sender_phone_number: str, sender_name: str
+        self, text: str, sender_phone_number: str, sender_name: str
     ):
         """Process an incoming WhatsApp message and send a response.
 
@@ -66,8 +66,6 @@ class WhatsAppService:
             None for status updates/duplicates (acknowledged but not processed),
             or response dict for processed messages.
         """
-        await self.whatsapp_api.set_typing_status(message_id)
-
         if text == "/reset memory":
             await self._assistant_service.clear_history(sender_phone_number)
             await self.whatsapp_api.send_message(to=sender_phone_number, text="Memória resetada.")
