@@ -80,9 +80,9 @@ jobs:
             echo 'Deploying in ${APP_DIR}'
             cd '${APP_DIR}'
 
-            git fetch origin prod
-            git checkout prod
-            git reset --hard origin/prod
+            git fetch origin main
+            git checkout main
+            git reset --hard origin/main
 
             echo '${GHCR_TOKEN}' | docker login ghcr.io -u delpro-empreendimentos --password-stdin
 
