@@ -33,7 +33,6 @@ class TestHandleMessage(unittest.IsolatedAsyncioTestCase):
         svc = _make_service(assistant_service=mock_assistant, whatsapp_api=mock_api)
 
         await svc.handle_message(
-            message_id="msg_123",
             text="Ola",
             sender_phone_number="5511999",
             sender_name="Carlos",
@@ -62,7 +61,6 @@ class TestHandleMessage(unittest.IsolatedAsyncioTestCase):
         )
 
         await svc.handle_message(
-            message_id="msg_1",
             text="Hi",
             sender_phone_number="5511999",
             sender_name="Tester",
@@ -79,7 +77,6 @@ class TestHandleMessage(unittest.IsolatedAsyncioTestCase):
         svc = _make_service(assistant_service=mock_assistant, whatsapp_api=mock_api)
 
         await svc.handle_message(
-            message_id="msg_1",
             text="/reset memory",
             sender_phone_number="5511999",
             sender_name="User",

@@ -46,6 +46,7 @@ class TestProcess(unittest.IsolatedAsyncioTestCase):
         mock_api.extract_information_whatsapp_message.return_value = (
             "msg1", "Ola", "5511999", "Alice"
         )
+        mock_api.set_typing_status = AsyncMock()
         mock_svc = MagicMock()
         svc = _make_service(whatsapp_api=mock_api, whatsapp_service=mock_svc)
 
@@ -173,6 +174,7 @@ class TestProcessDev(unittest.IsolatedAsyncioTestCase):
         mock_api.extract_information_whatsapp_message.return_value = (
             "msg1", "Hi", "5511999", "Bob"
         )
+        mock_api.set_typing_status = AsyncMock()
         mock_svc = MagicMock()
         svc = _make_service(whatsapp_api=mock_api, whatsapp_service=mock_svc)
 
@@ -184,6 +186,5 @@ class TestProcessDev(unittest.IsolatedAsyncioTestCase):
             mock_svc.handle_message,
             sender_name="Bob",
             sender_phone_number="5511999",
-            message_id="msg1",
             text="Hi",
         )
