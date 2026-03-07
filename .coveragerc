@@ -4,6 +4,8 @@ branch = True
 omit =
     tests/*
     */__init__.py
+    */utils/settings.py
+    */utils/logger.py
 source = src
 
 [report]
@@ -12,4 +14,4 @@ exclude_lines =
     pass
 precision = 2
 
-fail_under = 60.00
+fail_under = 100

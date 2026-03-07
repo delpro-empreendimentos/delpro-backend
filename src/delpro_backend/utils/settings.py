@@ -39,5 +39,11 @@ class Settings(BaseSettings):
     ALLOWED_FILE_TYPES: list[str] = ["application/pdf", "text/plain"]
     MAX_FILES_PER_UPLOAD: int = 5
 
+    # Dev routing (local debug via ngrok tunnel)
+    DEV_TUNNEL_URL: str = ""
+    DEV_INTERNAL_TOKEN: str = ""
+
+    DEV_PHONE: str = "5551991751193"
+
 
 settings = Settings()  # type: ignore

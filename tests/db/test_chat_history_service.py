@@ -105,12 +105,18 @@ class TestPostgresChatMessageHistoryAsync(unittest.IsolatedAsyncioTestCase):
         factory.return_value.__aexit__ = AsyncMock(return_value=False)
         return factory
 
+    def _make_execute_side_effect(self, last_reset_at, rows):
+        """Return side_effect list for two session.execute() calls."""
+        reset_result = MagicMock()
+        reset_result.scalar_one_or_none.return_value = last_reset_at
+        messages_result = MagicMock()
+        messages_result.scalars.return_value.all.return_value = rows
+        return [reset_result, messages_result]
+
     async def test_aget_messages_empty(self):
-        """Test aget_messages returns empty list for new session."""
+        """Test aget_messages returns empty list for new session without reset."""
         mock_session = AsyncMock()
-        mock_result = MagicMock()
-        mock_result.scalars.return_value.all.return_value = []
-        mock_session.execute.return_value = mock_result
+        mock_session.execute.side_effect = self._make_execute_side_effect(None, [])
 
         factory = self._make_mock_factory(mock_session)
         history = PostgresChatMessageHistory(
@@ -131,10 +137,8 @@ class TestPostgresChatMessageHistoryAsync(unittest.IsolatedAsyncioTestCase):
         row_ai.content = "hi there"
 
         mock_session = AsyncMock()
-        mock_result = MagicMock()
         # DB returns rows newest-first (ORDER BY desc); the service then reverses them.
-        mock_result.scalars.return_value.all.return_value = [row_ai, row_human]
-        mock_session.execute.return_value = mock_result
+        mock_session.execute.side_effect = self._make_execute_side_effect(None, [row_ai, row_human])
 
         factory = self._make_mock_factory(mock_session)
         history = PostgresChatMessageHistory(session_id="test", async_session_factory=factory)
@@ -143,6 +147,38 @@ class TestPostgresChatMessageHistoryAsync(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(messages), 2)
         self.assertIsInstance(messages[0], HumanMessage)
         self.assertIsInstance(messages[1], AIMessage)
+
+    async def test_aget_messages_with_recent_reset_marker(self):
+        """Test aget_messages uses reset timestamp as cutoff when it's more recent than 24h ago."""
+        import datetime
+
+        recent_reset = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(hours=1)
+
+        mock_session = AsyncMock()
+        mock_session.execute.side_effect = self._make_execute_side_effect(recent_reset, [])
+
+        factory = self._make_mock_factory(mock_session)
+        history = PostgresChatMessageHistory(session_id="test", async_session_factory=factory)
+
+        messages = await history.aget_messages()
+        self.assertEqual(messages, [])
+        # execute was called twice: once for reset query, once for messages query
+        self.assertEqual(mock_session.execute.call_count, 2)
+
+    async def test_aget_messages_with_old_reset_marker(self):
+        """Test aget_messages uses 24h cutoff when reset is older than 24 hours."""
+        import datetime
+
+        old_reset = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(hours=48)
+
+        mock_session = AsyncMock()
+        mock_session.execute.side_effect = self._make_execute_side_effect(old_reset, [])
+
+        factory = self._make_mock_factory(mock_session)
+        history = PostgresChatMessageHistory(session_id="test", async_session_factory=factory)
+
+        messages = await history.aget_messages()
+        self.assertEqual(messages, [])
 
     async def test_aadd_messages_persists(self):
         """Test aadd_messages persists messages and commits."""
@@ -175,20 +211,19 @@ class TestPostgresChatMessageHistoryAsync(unittest.IsolatedAsyncioTestCase):
 
         mock_session.commit.assert_awaited_once()
 
-    async def test_aclear_deletes_messages(self):
-        """Test aclear deletes all messages for the session."""
-        row1 = MagicMock(spec=MessageRow)
-        row2 = MagicMock(spec=MessageRow)
-
+    async def test_aclear_inserts_reset_marker(self):
+        """Test aclear inserts a reset marker row instead of deleting messages."""
         mock_session = AsyncMock()
-        mock_result = MagicMock()
-        mock_result.scalars.return_value.all.return_value = [row1, row2]
-        mock_session.execute.return_value = mock_result
+        mock_session.add = MagicMock()
 
         factory = self._make_mock_factory(mock_session)
         history = PostgresChatMessageHistory(session_id="test", async_session_factory=factory)
 
         await history.aclear()
 
-        self.assertEqual(mock_session.delete.await_count, 2)
+        mock_session.add.assert_called_once()
+        added_row = mock_session.add.call_args[0][0]
+        self.assertEqual(added_row.session_id, "test")
+        self.assertEqual(added_row.role, "reset")
+        self.assertEqual(added_row.content, "")
         mock_session.commit.assert_awaited_once()

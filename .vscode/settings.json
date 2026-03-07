@@ -8,7 +8,7 @@
 
     // === CODE FORMATTING & LINTING ===
     "[python]": {
-        "editor.defaultFormatter": "ms-python.black-formatter",
+        "editor.defaultFormatter": "charliermarsh.ruff",
         "editor.codeActionsOnSave": {
             "source.organizeImports.ruff": "explicit",
             "source.fixAll.ruff": "explicit"

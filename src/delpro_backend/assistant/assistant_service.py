@@ -62,6 +62,11 @@ class AssistantService:
             async_session_factory=AsyncSessionFactory,
         )
 
+    async def clear_history(self, session_id: str) -> None:
+        """Delete all messages for a conversation session."""
+        history_store = self._get_session_history(session_id)
+        await history_store.aclear()
+
     async def _load_prompt_template(self) -> ChatPromptTemplate:
         """Load the system prompt from the database, falling back to YAML.
 
@@ -92,7 +97,9 @@ class AssistantService:
         """
         if hasattr(response, "content"):
             content = response.content
-            if isinstance(content, list) and len(content) > 0:
+            if isinstance(content, list):
+                if len(content) == 0:
+                    return "Desculpe, não consegui gerar uma resposta. Pode repetir?"
                 first_item = content[0]
                 if isinstance(first_item, dict):
                     return first_item.get("text", str(content))
