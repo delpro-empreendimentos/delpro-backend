@@ -1,23 +1,22 @@
-"""Tests for WhatsApp utility functions (via WhatsAppService)."""
+"""Tests for WhatsApp utility functions (via WhatsappAPI)."""
 
 import os
 import unittest
-from unittest.mock import AsyncMock
 
 from tests.keys_test import DEFAULT_KEYS
 
 for key, value in DEFAULT_KEYS.items():
     os.environ.setdefault(key, value)
 
-from delpro_backend.services.whatsapp_service import WhatsAppService  # noqa: E402
+from delpro_backend.services.whatsapp_api import WhatsappAPI  # noqa: E402
 
 
 def _svc():
-    return WhatsAppService(assistant_service=AsyncMock(), broker_service=AsyncMock())
+    return WhatsappAPI()
 
 
 class TestIsValidWhatsappMessage(unittest.TestCase):
-    """Tests for WhatsAppService.is_valid_whatsapp_message."""
+    """Tests for WhatsappAPI.is_valid_whatsapp_message."""
 
     def test_valid_message_structure(self):
         """Should return True for a valid WhatsApp message."""

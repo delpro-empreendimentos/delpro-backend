@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import datetime
 from collections.abc import Sequence
 
 from langchain_core.chat_history import BaseChatMessageHistory
@@ -77,16 +78,32 @@ class PostgresChatMessageHistory(BaseChatMessageHistory):
         raise NotImplementedError("Use aget_messages() in async context.")
 
     async def aget_messages(self) -> list[BaseMessage]:
-        """Load the last N messages for this session, ordered by creation time."""
+        """Load the last N mgs for this session from the last 24 hours, after the last reset."""
+        cutoff = datetime.datetime.now(datetime.UTC) - datetime.timedelta(hours=24)
         async with self._async_session_factory() as session:
+            reset_stmt = (
+                select(MessageRow.created_at)
+                .where(
+                    MessageRow.session_id == self._session_id,
+                    MessageRow.role == "reset",
+                )
+                .order_by(MessageRow.created_at.desc())
+                .limit(1)
+            )
+            last_reset_at = (await session.execute(reset_stmt)).scalar_one_or_none()
+            effective_cutoff = max(cutoff, last_reset_at) if last_reset_at else cutoff
+
             stmt = (
                 select(MessageRow)
-                .where(MessageRow.session_id == self._session_id)
+                .where(
+                    MessageRow.session_id == self._session_id,
+                    MessageRow.created_at >= effective_cutoff,
+                    MessageRow.role != "reset",
+                )
                 .order_by(MessageRow.created_at.desc())
                 .limit(settings.MAX_HISTORY_MESSAGES)
             )
-            result = await session.execute(stmt)
-            rows = result.scalars().all()
+            rows = (await session.execute(stmt)).scalars().all()
         return [_row_to_message(row) for row in reversed(rows)]
 
     async def aadd_messages(self, messages: Sequence[BaseMessage]) -> None:
@@ -106,10 +123,7 @@ class PostgresChatMessageHistory(BaseChatMessageHistory):
         raise NotImplementedError("Use aclear() in async context.")
 
     async def aclear(self) -> None:
-        """Delete all messages for this session."""
+        """Insert a reset marker so the LLM forgets prior messages without deleting them."""
         async with self._async_session_factory() as session:
-            stmt = select(MessageRow).where(MessageRow.session_id == self._session_id)
-            result = await session.execute(stmt)
-            for row in result.scalars().all():
-                await session.delete(row)
+            session.add(MessageRow(session_id=self._session_id, role="reset", content=""))
             await session.commit()

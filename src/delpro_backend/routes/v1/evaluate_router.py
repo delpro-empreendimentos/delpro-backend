@@ -10,6 +10,7 @@ from delpro_backend.services.broker_service import BrokerService
 from delpro_backend.services.media_service import MediaService
 from delpro_backend.services.rag_service import RAGService
 from delpro_backend.services.vector_service import VectorService
+from delpro_backend.services.whatsapp_api import WhatsappAPI
 from delpro_backend.services.whatsapp_service import WhatsAppService
 from delpro_backend.utils.builders import get_embeddings, get_llm
 from delpro_backend.utils.handle_errors import handle_errors
@@ -32,8 +33,9 @@ _assistant_service = AssistantService(
 )
 
 _broker_service = BrokerService()
+whatsapp_api = WhatsappAPI()
 whatsapp_service = WhatsAppService(
-    assistant_service=_assistant_service, broker_service=_broker_service
+    assistant_service=_assistant_service, broker_service=_broker_service, whatsapp_api=whatsapp_api
 )
 
 
@@ -43,7 +45,15 @@ async def receive_message(body: dict) -> Response:
     """POST /webhook - Handle incoming WhatsApp messages."""
     before = time.time()
 
-    response = await whatsapp_service.handle_message(body)
+    message_id, text, sender_phone_number, sender_name = (
+        whatsapp_api.extract_information_whatsapp_message(body=body)
+    )
+    response = await whatsapp_service.handle_message(
+        message_id=message_id,
+        text=text,
+        sender_phone_number=sender_phone_number,
+        sender_name=sender_name,
+    )
 
     logger.info(f"Time elapsed: {time.time() - before}")
 

@@ -16,16 +16,19 @@ logger_extra = {"component.name": "WhatsappService", "component.version": "v1"}
 logger = get_logger(__name__)
 
 
-whatsapp_api = WhatsappAPI()
-
-
 class WhatsAppService:
     """Service for WhatsApp message operations."""
 
-    def __init__(self, assistant_service: AssistantService, broker_service: BrokerService):
+    def __init__(
+        self,
+        assistant_service: AssistantService,
+        broker_service: BrokerService,
+        whatsapp_api: WhatsappAPI,
+    ):
         """WhatsApp service class module."""
         self._assistant_service = assistant_service
         self._broker_service = broker_service
+        self.whatsapp_api = whatsapp_api
 
     async def signature_required(self, request: Request) -> dict:
         """Dependency to ensure incoming requests are valid and signed correctly.
@@ -48,64 +51,31 @@ class WhatsAppService:
 
         return json.loads(payload)
 
-    def is_valid_whatsapp_message(self, body: dict) -> bool:
-        """Check if the incoming webhook event has a valid WhatsApp message structure."""
-        try:
-            message = body["entry"][0]["changes"][0]["value"]["messages"][0]
-            return bool(body.get("object") and message)
-        except (KeyError, IndexError, TypeError):
-            return False
-
-    def extract_information_whatsapp_message(self, body: dict) -> tuple[str, str, str, str]:
-        """Extract message information from a WhatsApp webhook payload.
-
-        Args:
-            body: The webhook payload from WhatsApp.
-
-        Returns:
-            A tuple of (message_id, text, sender_phone_number, sender_name).
-        """
-        try:
-            message = body["entry"][0]["changes"][0]["value"]["messages"][0]
-            message_id = message["id"]
-
-            contact = body["entry"][0]["changes"][0]["value"]["contacts"][0]
-            sender_phone_number = contact.get("wa_id") or contact.get("sender_phone_number")
-            sender_name = contact["profile"]["name"]
-            text = message["text"]["body"]
-            return message_id, text, sender_phone_number, sender_name
-        except Exception:
-            return "", "", "", ""
-
-    async def handle_message(self, body: dict):
+    async def handle_message(
+        self, message_id: str, text: str, sender_phone_number: str, sender_name: str
+    ):
         """Process an incoming WhatsApp message and send a response.
 
         Args:
-            body: The webhook payload from WhatsApp.
+            message_id: The unique identifier of the message.
+            text: The message text content.
+            sender_phone_number: The phone number of the sender.
+            sender_name: The name of the sender.
 
         Returns:
             None for status updates/duplicates (acknowledged but not processed),
             or response dict for processed messages.
         """
-        if not self.is_valid_whatsapp_message(body):
-            logger.info("Non-message webhook event, acknowledging", extra=logger_extra)
-            return None
+        await self.whatsapp_api.set_typing_status(message_id)
 
-        message_id, text, sender_phone_number, sender_name = (
-            self.extract_information_whatsapp_message(body=body)
-        )
-
-        if text == "/reset chat":
-            #resetar chat
-            print("")
-
-        # test only
-        if sender_phone_number == "":
-            return ""
+        if text == "/reset memory":
+            await self._assistant_service.clear_history(sender_phone_number)
+            await self.whatsapp_api.send_message(to=sender_phone_number, text="Memória resetada.")
+            return
 
         logger.info(
-            "Processing message %s from %s (%s)",
-            message_id,
+            "Processing message '%s' from %s (%s)",
+            text,
             sender_name,
             sender_phone_number,
             extra=logger_extra,
@@ -117,10 +87,17 @@ class WhatsAppService:
             user_name=sender_name,
         )
 
-        await whatsapp_api.set_typing_status(message_id)
+        logger.info(
+            "Processing message '%s' from %s (%s)",
+            text,
+            sender_name,
+            sender_phone_number,
+            extra=logger_extra,
+        )
+
+        await self.whatsapp_api.send_message(to=sender_phone_number, text=response_text)
+
         await self._broker_service.upsert_from_interaction(
             phone_number=sender_phone_number,
             name=sender_name,
         )
-
-        await whatsapp_api.send_message(to=sender_phone_number, text=response_text)
