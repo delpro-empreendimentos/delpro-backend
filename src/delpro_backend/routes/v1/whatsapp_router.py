@@ -2,7 +2,7 @@
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Query, status
+from fastapi import APIRouter, BackgroundTasks, Depends, Header, HTTPException, Query, status
 from fastapi.responses import PlainTextResponse, Response
 
 from delpro_backend.assistant.assistant_service import AssistantService
@@ -11,6 +11,8 @@ from delpro_backend.services.broker_service import BrokerService
 from delpro_backend.services.media_service import MediaService
 from delpro_backend.services.rag_service import RAGService
 from delpro_backend.services.vector_service import VectorService
+from delpro_backend.services.webhook_preprocessing_service import WebhookPreProcessingService
+from delpro_backend.services.whatsapp_api import WhatsappAPI
 from delpro_backend.services.whatsapp_service import WhatsAppService
 from delpro_backend.utils.builders import get_embeddings, get_llm
 from delpro_backend.utils.handle_errors import handle_errors
@@ -34,8 +36,12 @@ _assistant_service = AssistantService(
 )
 
 _broker_service = BrokerService()
+whatsapp_api = WhatsappAPI()
 whatsapp_service = WhatsAppService(
-    assistant_service=_assistant_service, broker_service=_broker_service
+    assistant_service=_assistant_service, broker_service=_broker_service, whatsapp_api=whatsapp_api
+)
+preprocessing_service = WebhookPreProcessingService(
+    whatsapp_api=whatsapp_api, whatsapp_service=whatsapp_service
 )
 
 
@@ -57,9 +63,20 @@ async def validate_webhook(
 @whatsapp_router.post("")
 @handle_errors
 async def receive_message(
+    background_tasks: BackgroundTasks,
     body: Annotated[dict, Depends(whatsapp_service.signature_required)],
 ) -> Response:
     """POST /webhook - Handle incoming WhatsApp messages."""
-    await whatsapp_service.handle_message(body)
+    return await preprocessing_service.process(body, background_tasks)
 
-    return Response(status_code=status.HTTP_200_OK)
+
+@whatsapp_router.post("/dev")
+async def receive_dev_message(
+    background_tasks: BackgroundTasks,
+    body: dict,
+    x_dev_token: Annotated[str | None, Header()] = None,
+) -> Response:
+    """POST /webhook/dev - Receives forwarded messages from cloud for local debugging."""
+    if not settings.DEV_INTERNAL_TOKEN or x_dev_token != settings.DEV_INTERNAL_TOKEN:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN)
+    return await preprocessing_service.process_dev(body, background_tasks)

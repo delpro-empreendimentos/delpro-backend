@@ -22,6 +22,12 @@ class TestMain(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual({"detail": "Alive!"}, response.json())
 
+    def test_health_endpoint(self):
+        """Test the health check endpoint."""
+        response = self.test_client.get("/health")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual({"status": "ok"}, response.json())
+
 
 class TestLifespan(unittest.IsolatedAsyncioTestCase):
     """Tests for the application lifespan hook."""
